@@ -11,4 +11,6 @@ UDerbyDemoSportsWheelFront::UDerbyDemoSportsWheelFront()
 
 	MaxBrakeTorque = 4500.0f;
 	MaxHandBrakeTorque = 6000.0f;
+
+	LateralSlipGraph.GetRichCurve()->Reset();
 }
