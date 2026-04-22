@@ -33,9 +33,9 @@ ADerbyDemoPawn                      ← abstract base (vehicle pawn)
 ├── ADerbyDemoSportsCar             ← sports car variant
 └── ADerbyDemoOffroadCar            ← offroad car variant
 
-ADerbyDemoGameMode                  ← abstract base
-├── ATimeTrialGameMode              ← finish line lookup + lap count config
-└── AOffroadGameMode                ← offroad variant
+ADerbyDemoGameMode                  ← abstract base (no shared behavior; currently empty)
+ATimeTrialGameMode                  ← inherits AGameModeBase directly; finish line lookup + lap count config
+AOffroadGameMode                    ← inherits AGameModeBase directly; offroad variant
 
 ADerbyDemoPlayerController          ← input mapping, UI spawning, respawn logic
 ATimeTrialPlayerController          ← parallel controller (NOT a subclass of above)
@@ -50,7 +50,8 @@ ATimeTrialPlayerController          ← parallel controller (NOT a subclass of a
 - Each input action has a private `void Foo(FInputActionValue&)` handler that delegates to a public `BlueprintCallable` `void DoFoo(...)` method — the `Do*` methods are the canonical entry points, also used by mobile touch controls
 - `BrakeLights(bool)` is a `BlueprintImplementableEvent` — brake light material/effect logic must be implemented in Blueprint, not C++
 - Dual spring-arm cameras (front/rear); back camera yaw is lerped back to 0 each tick
-- Flip detection uses two consecutive timer checks (`FlipCheckTime` interval, default 3 s): first failed check sets `bPreviousFlipCheck`, second triggers `DoResetVehicle()`
+- Flip detection uses two consecutive timer checks (`FlipCheckTime` interval, default 3 s): first failed check sets `bPreviousFlipCheck`, second triggers `DoResetVehicle()`; "flipped" is defined as the vehicle's up-dot falling below `FlipCheckMinDot` (default −0.2)
+- `DisplayDebug` is overridden to add per-wheel lateral slip telemetry to the `showdebug vehicle` HUD
 - Angular damping is set to 3.0 in `Tick` when airborne, 0.0 when grounded
 - Wheel variants follow a naming convention: `UDerbyDemo[Variant]Wheel[Front|Rear]`
 - **Wheel tuning:** `UChaosVehicleWheel` constructor values (including `LateralSlipGraph` keys) always override anything set in the Blueprint Details panel at PIE startup. Edit wheel properties in C++, not the editor.
@@ -65,13 +66,15 @@ ATimeTrialPlayerController          ← parallel controller (NOT a subclass of a
 ### UI System
 
 - `UDerbyDemoUI` — base HUD showing speed (MPH/KPH) and gear; updated every tick by the player controller
-- `UTimeTrialUI` — extends base with lap time tracking
+- `UTimeTrialUI` — separate widget (does **not** extend `UDerbyDemoUI`); the time trial controller spawns both independently; tracks lap/best-time state
+- `UTimeTrialStartUI` — sub-widget spawned by `UTimeTrialUI`; countdown animation is Blueprint-driven; calls `FinishCountdown()` (BlueprintCallable) when done, which fires `FCountdownFinishedDelegate`
 - All UI uses UMG; key update points are exposed as `BlueprintImplementableEvent` for Blueprint extension
 
 ### Input
 
 - Modern Enhanced Input (Content/Input/) is the primary system
 - `ADerbyDemoPlayerController` maintains two IMC arrays: `DefaultMappingContexts` (always added) and `MobileExcludedMappingContexts` (skipped on touch platforms)
+- Optional `SteeringWheelInputMappingContext` is added alongside defaults when `bUseSteeringWheelControls` is true; does not block other input
 - `bForceTouchControls` (Config property) forces mobile UI on desktop for testing
 - Legacy `DefaultInput.ini` bindings also present for compatibility
 

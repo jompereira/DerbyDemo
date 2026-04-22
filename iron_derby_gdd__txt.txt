@@ -1,0 +1,249 @@
+
+KINETIC THEORY GAMES
+
+IRON DERBY
+Game Design Document — v0.1
+
+
+Physics-driven arcade demolition derby
+
+Platform: PC (Steam)
+Engine: Unreal Engine 5
+Target Launch: Q3 2026
+Price Point: €4.99 – €7.99
+
+1. Game Overview
+1.1 Concept
+Iron Derby is a physics-driven arcade demolition derby where you score points by destroying opponents and surviving. Contained, chaotic, and deeply satisfying to clip. Every collision has weight, every panel that flies off is a moment worth recording.
+
+1.2 Pillars
+    • Destruction feels incredible — every hit has weight, sound, and visual feedback
+    • Readable chaos — 10 cars crashing at once, but you always know what's happening to you
+    • One more round — score-attack loop that is addictive in 5-minute sessions
+
+1.3 Elevator Pitch
+Wreckfest's destruction satisfaction in a micro-scope arcade format — no race to win, just survive and destroy. Designed for solo play, streaming moments, and sub-€8 impulse purchases on Steam.
+
+1.4 Key Facts
+
+Field	Detail
+Genre	Vehicular Combat / Demolition Derby
+Platform	PC — Steam
+Engine	Unreal Engine 5 (Chaos Physics)
+Team Size	Solo (Kinetic Theory Games)
+Target Price	€4.99 – €7.99
+Session Length	3–10 minutes
+Target Audience	Fans of Wreckfest, Burnout, Carmageddon
+Development Time	3 months (vertical slice to launch)
+
+
+2. Gameplay
+2.1 Core Loop
+The player enters an arena in a car. A 3-minute timer starts. Score points by ramming opponents — harder hits score more. Survive until the timer ends or be the last car standing. Post-session leaderboard. Play again.
+
+2.2 Scoring System
+Scoring is event-driven based on collision impulse magnitude. Every hit is mapped to a point value proportional to the relative velocity at the moment of impact.
+
+Action	Points
+Light hit (50k+ impulse)	10 pts
+Medium hit (150k+ impulse)	25 pts
+Heavy hit (250k+ impulse)	50 pts + floating number
+Panel detach (opponent)	+20 pts bonus
+Elimination (opponent on fire)	+100 pts
+Survival bonus (full 3 min)	+50 pts
+Consecutive hits (multiplier)	x1.5 after 3 in a row
+
+2.3 Session Structure
+    • Pre-session: car select screen (up to 3 variants at launch)
+    • Arena: 3-minute timer, score accumulates in real time
+    • Floating world-space score numbers appear on each hit
+    • Fire state at 80% damage — countdown to elimination
+    • Post-session: score summary, personal best, leaderboard rank
+    • Instant restart — no menus between rounds
+
+2.4 Car Variants (v1 Target)
+
+Variant	Mass	Top Speed	Strengths
+Bruiser (balanced)	1800 kg	Medium	All-round, forgiving, good for new players
+Juggernaut (tank)	2400 kg	Slow	Massive impact force, survives longer
+Speedster (agile)	1200 kg	Fast	Hard to catch, high ram speed, low HP
+
+
+3. Destruction System
+3.1 Three-Layer Approach
+Destruction is implemented in three compounding layers, each adding a dimension of feedback and physicality.
+
+Layer 1 — Cosmetic (all hits above minimum threshold)
+    • Impact decals stick to car surface (dirt, scratches, scorch)
+    • Directional spark burst at collision point (Niagara GPU, 0.3s lifetime)
+    • Triggered via OnComponentHit, zero physics cost
+
+Layer 2 — Structural (medium hits)
+    • Morph targets on car body mesh blend toward pre-authored crumple shapes
+    • 4 morph targets per car: front, rear, left side, right side
+    • Damage float (0-1) per zone drives morph weight in real time
+    • Affects visual feel without expensive runtime mesh deformation
+
+Layer 3 — Part Detachment (heavy hits)
+    • Geometry Collections activate and simulate as rigid bodies
+    • Panels fly off with impulse matching the collision direction
+    • Detached panels persist as arena floor obstacles for 10 seconds
+    • Adds emergent chaos — debris becomes a hazard
+
+3.2 Handling Degradation
+Damage is not purely cosmetic — it affects how the car drives. This creates a natural comeback tension and makes survival feel earned.
+
+Damage Zone	Effect on Handling
+Front heavy damage	Steering reduced, understeer increases
+Engine (hood)	Max RPM drops, acceleration suffers
+Rear heavy damage	Oversteer increases, traction drops
+Wheel hit	That wheel loses grip, car pulls
+Fire state (80%+ damage)	Speed capped at 60% of maximum
+
+Handling degradation is capped at 40% reduction from baseline — impaired but never undrivable.
+
+3.3 Fire State
+    • Triggered at 80% total damage accumulation
+    • Point light + particle effect + damage-over-time tick
+    • Natural elimination countdown — readable from across the arena
+    • Opponent elimination awards 100 bonus points to the player who dealt most damage
+
+
+4. Arena Design
+4.1 v1 — The Bowl
+A flat circular dirt arena with angled outer walls. Simple, readable geometry that encourages head-on confrontations. No escape routes — high density of action at all times.
+    • Diameter: approximately 60m
+    • Outer walls: angled at 30 degrees to deflect cars back into the arena
+    • Surface: dirt — visible tyre tracks accumulate during session
+    • Central obstacle cluster: 3-5 indestructible concrete pillars forcing path variation
+
+4.2 Arena Hazards (Month 2)
+    • Collapsing wall segments — heavy impact can break a section open, but the gap is dangerous
+    • Fire zones — patches of burning ground deal passive fire damage on contact
+    • Debris from destroyed panels accumulates — dynamic obstacle layer
+
+4.3 v2 Arena — The Figure-8 (Month 3)
+A figure-8 track layout with a central crossover zone. Higher speed, longer range rams, and a crossover collision point that generates natural highlight moments.
+
+
+5. Technical Overview
+5.1 Engine & Physics
+    • Unreal Engine 5 — Chaos Vehicle Movement Component as base
+    • Chaos Physics for rigid body simulation and Geometry Collections
+    • Arcade tuning: high grip, snappy steering, disabled ABS/traction sim
+    • Car mass: 1200–2400 kg depending on variant (critical for impact feel)
+
+5.2 Performance Budget
+Performance constraints are set early and enforced throughout development to prevent late-stage optimization crises.
+
+Constraint	Limit
+Active Geometry Collection chunks	200 max simultaneous
+Detached panels alive in arena	40 (pool and recycle)
+Destruction LOD distance	Full detail within 15m, simplified beyond
+Niagara spark particles per emitter	50 cap
+Target frame rate	60 fps on mid-range hardware (GTX 1070 equiv.)
+
+5.3 Camera
+    • Third-person follow cam with slight lag and FOV boost at high speed
+    • Screen shake on impact — amplitude scales with collision impulse strength
+    • Collision camera shake is the single highest-ROI feel improvement
+
+
+6. Development Plan
+6.1 Milestone Overview
+
+Milestone	Goal
+Month 1 — Vertical Slice	Fun core loop: 1 arena, 1 car, basic destruction, session timer, local leaderboard
+Month 2 — Alpha	3 car variants, basic AI opponents, arena hazards, Steam page live
+Month 3 — Beta / Launch	2 arenas, full polish pass, trailer, Steam Next Fest (if timing), launch
+
+6.2 Month 1 Priority Tasks
+Month 1 is intentionally minimal. The only success criterion is: play it for 20 minutes without getting bored.
+    • Unreal project setup + Chaos Vehicle base
+    • Car controller feel tuning (timeboxed to 3 days)
+    • Collision impulse mapped to score event
+    • Layer 1: Impact VFX and decals
+    • Layer 2: Morph target denting (front / rear / sides)
+    • Layer 3: Geometry Collection panel detachment (front bumper only)
+    • Arena blockout — flat bowl geometry
+    • Session timer (3 min) + score counter
+    • Camera shake on collision
+    • Basic engine and collision SFX
+    • Fire state (80% damage threshold)
+    • Performance budget pass (stat chaos profiling)
+
+6.3 Scope Cut Rules
+The following are explicitly out of scope for v1 and must not be added during Month 1:
+    • Multiplayer of any kind
+    • More than 1 arena
+    • More than 1 car
+    • Main menu or settings screen
+    • AI opponents
+    • Music
+Everything above is a Month 2 or Month 3 concern.
+
+
+7. Commercial Strategy
+7.1 Market Context
+The demolition derby / vehicular destruction genre has a healthy PC audience. Wreckfest proved the high-end appetite (1M+ copies). The indie gap is an arcade-tone, low-price entry point that does not try to compete as a simulation.
+KEO (Steam Early Access, vehicular combat with weapons and online multiplayer) is a surface-level competitor but targets a fundamentally different game loop — weapons-based team PvP vs. physics-based solo destruction. KEO's struggle with player counts validates the decision to avoid multiplayer dependency.
+
+7.2 Price & Positioning
+    • Launch price: €4.99 – €7.99 (impulse purchase territory)
+    • No DLC planned for v1 — complete experience at launch
+    • Potential post-launch: additional arena pack at €1.99
+
+7.3 Marketing Timeline
+
+Action	Timing
+First devlog / destruction clip posted	End of Week 2
+TikTok / YouTube Shorts — destruction clips	Weekly from Week 3
+Steam page live + wishlist open	Start of Month 2
+Steam Next Fest submission (if timing aligns)	Month 3
+Launch trailer (60s destruction reel)	Week 1 of Month 3
+Launch at €4.99 – €7.99	End of Month 3
+
+7.4 Content Strategy
+Destruction games clip themselves. Every session generates shareable moments — pile-ups, panel fly-offs, last-second survival. The content strategy is built on this:
+    • Raw 30-second destruction clips — no narration, no editing
+    • Before/after car damage state comparisons
+    • Development build progress devlogs on YouTube
+    • Physics experiments and behind-the-scenes tuning clips
+
+7.5 Competitive Comparison
+
+Game	Price	Scope	Differentiator vs Iron Derby
+Wreckfest	€29.99	Full	Sim-adjacent, race-focused, full production
+Burnout Paradise Remaster	€19.99	Full	Older, racing-primary, no active dev
+Derby: Extreme Racing	€3.99	Micro	Low visual quality, no physics depth
+KEO	€9.99	EA	Multiplayer-dependent, weapons-based
+Iron Derby (target)	€4.99–7.99	Micro	Arcade destruction, physics depth, solo viable
+
+
+8. Risk Register
+
+Risk	Severity	Likelihood	Mitigation
+Vehicle feel tuning takes too long	High	Medium	Timebox to 3 days in Month 1, ship imperfect, iterate
+Chaos physics performance in large collisions	High	Medium	Cap simultaneous chunks, enforce LOD destruction early
+Game feels empty without good AI	Medium	High	Populate arena with dummies early, add environmental chaos
+3-month timeline slips	Medium	Medium	Cut to 1 arena, 1 car, score-attack only — still shippable
+Low wishlist traction on Steam	Medium	Low	Post destruction clips weekly from Week 2 to build audience
+Scope creep from feature ideas	Medium	High	Hard scope cut rules enforced — see Section 6.3
+
+
+9. Reference & Inspiration
+9.1 Feel References
+    • Wreckfest — destruction model, damage feel, weight of impacts
+    • Burnout 3: Takedown — camera work, impact feedback, crash cam energy
+    • Carmageddon — destructive freedom, dark humour, vehicular chaos
+
+9.2 Visual References
+    • Hotshot Racing — low-poly arcade aesthetic, strong colour contrast
+    • Wreckfest — chunky, grounded vehicle design language
+Target style: stylized but weighty. Chunky low-poly cars with physically convincing impacts. Lower art budget, strong visual identity, GIFs well.
+
+9.3 Anti-References (what we are NOT building)
+    • Not a racing game — there is no race to win
+    • Not a simulation — arcade feel, not physics realism
+    • Not multiplayer-dependent — solo score-attack is the primary mode
+    • Not feature-complete at launch — contained, polished, focused
