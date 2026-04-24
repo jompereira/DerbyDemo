@@ -4,6 +4,7 @@
 
 #include "CoreMinimal.h"
 #include "WheeledVehiclePawn.h"
+#include "Camera/CameraShakeBase.h"
 #include "DerbyDemoPawn.generated.h"
 
 class UCameraComponent;
@@ -90,6 +91,20 @@ protected:
 	/** Flip check timer */
 	FTimerHandle FlipCheckTimer;
 
+	/** Camera shake triggered on collision */
+	UPROPERTY(EditAnywhere, Category="Camera Shake")
+	TSubclassOf<UCameraShakeBase> CollisionCameraShake;
+
+	/** Impulse magnitude (N·s) that maps to shake scale 1.0; smaller hits produce a proportionally smaller shake */
+	UPROPERTY(EditAnywhere, Category="Camera Shake", meta=(Units="Ns", ClampMin="1.0"))
+	float CollisionShakeMaxImpulse = 5000.0f;
+	
+	/** Impulse magnitude (N·s) that maps to shake scale 1.0; smaller hits produce a proportionally smaller shake */
+	UPROPERTY(EditAnywhere, Category="Camera Shake", meta=(Units="Ns", ClampMin="1.0"))
+	float CollisionShakeMinImpulse = 800.0f;
+	
+	
+
 public:
 	ADerbyDemoPawn();
 
@@ -112,6 +127,9 @@ public:
 
 	/** Extend showdebug vehicle with per-wheel slip telemetry */
 	virtual void DisplayDebug(UCanvas* Canvas, const FDebugDisplayInfo& DebugDisplay, float& YL, float& YPos) override;
+
+	/** Trigger collision camera shake on impact */
+	virtual void NotifyHit(UPrimitiveComponent* MyComp, AActor* Other, UPrimitiveComponent* OtherComp, bool bSelfMoved, FVector HitLocation, FVector HitNormal, FVector NormalImpulse, const FHitResult& Hit) override;
 
 	// End Actor interface
 

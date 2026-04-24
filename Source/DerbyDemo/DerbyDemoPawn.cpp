@@ -275,6 +275,34 @@ void ADerbyDemoPawn::DoResetVehicle()
 	GetMesh()->SetPhysicsLinearVelocity(FVector::ZeroVector);
 }
 
+void ADerbyDemoPawn::NotifyHit(UPrimitiveComponent* MyComp, AActor* Other, UPrimitiveComponent* OtherComp, bool bSelfMoved, FVector HitLocation, FVector HitNormal, FVector NormalImpulse, const FHitResult& Hit)
+{
+	Super::NotifyHit(MyComp, Other, OtherComp, bSelfMoved, HitLocation, HitNormal, NormalImpulse, Hit);
+
+	if (!CollisionCameraShake)
+	{
+		return;
+	}
+
+	APlayerController* PC = GetController<APlayerController>();
+	if (!PC)
+	{
+		return;
+	}
+
+	const float ImpulseMag = NormalImpulse.Size();
+	UE_LOG(LogDerbyDemo, Log, TEXT("Collision impulse: %.1f N·s"), ImpulseMag);
+
+	if (CollisionShakeMinImpulse)
+	{
+		const float Scale = FMath::Clamp(ImpulseMag / CollisionShakeMaxImpulse, 0.0f, 1.0f);
+		if (Scale > 0.0f)
+		{
+			PC->ClientStartCameraShake(CollisionCameraShake, Scale);
+		}
+	}
+}
+
 void ADerbyDemoPawn::FlippedCheck()
 {
 	// check the difference in angle between the mesh's up vector and world up
@@ -282,6 +310,7 @@ void ADerbyDemoPawn::FlippedCheck()
 
 	if (UpDot < FlipCheckMinDot)
 	{
+		
 		// is this the second time we've checked that the vehicle is still flipped?
 		if (bPreviousFlipCheck)
 		{
