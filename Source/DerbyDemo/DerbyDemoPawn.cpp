@@ -15,6 +15,7 @@
 #include "TimerManager.h"
 #include "Engine/Canvas.h"
 #include "DisplayDebugHelpers.h"
+#include "GeometryCollection/GeometryCollectionComponent.h"
 
 #define LOCTEXT_NAMESPACE "VehiclePawn"
 
@@ -101,6 +102,12 @@ void ADerbyDemoPawn::BeginPlay()
 
 	// set up the flipped check timer
 	GetWorld()->GetTimerManager().SetTimer(FlipCheckTimer, this, &ADerbyDemoPawn::FlippedCheck, FlipCheckTime, true);
+
+	// prevent geometry collection pieces from colliding with this vehicle's skeletal mesh
+	for (UGeometryCollectionComponent* GC : TInlineComponentArray<UGeometryCollectionComponent*>(this))
+	{
+		GC->SetCollisionResponseToChannel(ECC_Vehicle, ECR_Ignore);
+	}
 }
 
 void ADerbyDemoPawn::EndPlay(EEndPlayReason::Type EndPlayReason)
@@ -275,10 +282,10 @@ void ADerbyDemoPawn::DoResetVehicle()
 	GetMesh()->SetPhysicsLinearVelocity(FVector::ZeroVector);
 }
 
-void ADerbyDemoPawn::NotifyHit(UPrimitiveComponent* MyComp, AActor* Other, UPrimitiveComponent* OtherComp, bool bSelfMoved, FVector HitLocation, FVector HitNormal, FVector NormalImpulse, const FHitResult& Hit)
-{
-	Super::NotifyHit(MyComp, Other, OtherComp, bSelfMoved, HitLocation, HitNormal, NormalImpulse, Hit);
 
+
+void ADerbyDemoPawn::DoCameraShake(const FVector& NormalImpulse)
+{
 	if (!CollisionCameraShake)
 	{
 		return;
@@ -301,6 +308,15 @@ void ADerbyDemoPawn::NotifyHit(UPrimitiveComponent* MyComp, AActor* Other, UPrim
 			PC->ClientStartCameraShake(CollisionCameraShake, Scale);
 		}
 	}
+}
+
+void ADerbyDemoPawn::NotifyHit(UPrimitiveComponent* MyComp, AActor* Other, UPrimitiveComponent* OtherComp, bool bSelfMoved, FVector HitLocation, FVector HitNormal, FVector NormalImpulse, const FHitResult& Hit)
+{
+	Super::NotifyHit(MyComp, Other, OtherComp, bSelfMoved, HitLocation, HitNormal, NormalImpulse, Hit);
+
+	const float ImpulseMag = NormalImpulse.Size();
+	DoCameraShake(NormalImpulse);
+	OnImpact(HitLocation, ImpulseMag);
 }
 
 void ADerbyDemoPawn::FlippedCheck()

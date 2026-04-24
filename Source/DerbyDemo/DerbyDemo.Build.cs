@@ -17,7 +17,8 @@ public class DerbyDemo : ModuleRules
 			"ChaosVehicles",
 			"PhysicsCore",
 			"UMG",
-			"Slate"
+			"Slate",
+			"GeometryCollectionEngine"
 		});
 
 		PublicIncludePaths.AddRange(new string[] {

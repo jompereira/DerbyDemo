@@ -202,12 +202,27 @@ public:
 	/** Handle reset vehicle input by input actions or mobile interface */
 	UFUNCTION(BlueprintCallable, Category="Input")
 	void DoResetVehicle();
+	void DoCameraShake(const FVector& NormalImpulse);
 
 protected:
 
 	/** Called when the brake lights are turned on or off */
 	UFUNCTION(BlueprintImplementableEvent, Category="Vehicle")
 	void BrakeLights(bool bBraking);
+
+	/** Called on physics impact; use this in Blueprint to apply strain to the geometry collection */
+	UFUNCTION(BlueprintImplementableEvent, Category="Vehicle")
+	void OnImpact(FVector ImpactLocation, float ImpulseMagnitude);
+
+	/**
+	 * Returns the name of the socket (and matching morph target) closest to WorldHitLocation.
+	 * Only considers sockets whose names begin with DamageSocketPrefix.
+	 * Returns NAME_None if no matching socket exists.
+	 */
+
+	/** Prefix used to identify panel anchor sockets, e.g. "Damage_" */
+	UPROPERTY(EditAnywhere, Category="Damage")
+	FString DamageSocketPrefix = TEXT("MT_");
 
 	/** Checks if the car is flipped upside down and automatically resets it */
 	UFUNCTION()

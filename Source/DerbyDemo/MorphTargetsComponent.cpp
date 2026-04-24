@@ -1,8 +1,6 @@
 // Fill out your copyright notice in the Description page of Project Settings.
 
-
 #include "MorphTargetsComponent.h"
-
 
 // Sets default values for this component's properties
 UMorphTargetsComponent::UMorphTargetsComponent()
@@ -20,7 +18,7 @@ void UMorphTargetsComponent::BeginPlay()
 {
 	Super::BeginPlay();
 
-	// ...
+	MeshComponent = GetOwner()->FindComponentByClass<USkeletalMeshComponent>();
 	
 }
 
@@ -31,5 +29,46 @@ void UMorphTargetsComponent::TickComponent(float DeltaTime, ELevelTick TickType,
 	Super::TickComponent(DeltaTime, TickType, ThisTickFunction);
 
 	// ...
+}
+
+TArray<FString> UMorphTargetsComponent::GetMorphTargetSocketOptions() const
+{
+	TArray<FString> Options;
+	if (MeshComponent)
+	{
+		for (const FName& Name : MeshComponent->GetAllSocketNames())
+		{
+			if (Name.ToString().StartsWith(MorphTargetSocketPrefix))
+			{
+				Options.Add(Name.ToString());
+			}
+		}
+	}
+	return Options;
+
+}
+
+FName UMorphTargetsComponent::GetClosestMTSocket(FVector WorldHitLocation, const float MaxDistance) const
+{
+	FName ClosestSocket = NAME_None;
+	float ClosestDistSq = MAX_FLT;
+	const float MaxDistanceSquared = MaxDistance * MaxDistance;
+
+	for (const FName& SocketName : MeshComponent->GetAllSocketNames())
+	{
+		if (!SocketName.ToString().StartsWith(MorphTargetSocketPrefix))
+		{
+			continue;
+		}
+
+		const float DistSq = FVector::DistSquared(MeshComponent->GetSocketLocation(SocketName), WorldHitLocation);
+		if (DistSq < ClosestDistSq && DistSq < MaxDistanceSquared)
+		{
+			ClosestDistSq = DistSq;
+			ClosestSocket = SocketName;
+		}
+	}
+
+	return ClosestSocket;
 }
 
