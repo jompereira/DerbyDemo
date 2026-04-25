@@ -11,7 +11,7 @@ struct FMorphTargetData
 {
 	GENERATED_BODY()
 	
-	UPROPERTY(EditAnywhere, meta=(GetOptions="GetMorphTargetSocketOptions"))
+	UPROPERTY(EditAnywhere)
 	FName SocketName;
 	
 	UPROPERTY(EditAnywhere)
@@ -39,17 +39,46 @@ protected:
 	UPROPERTY(EditAnywhere)
 	TArray<FMorphTargetData> MorphTargets;
 	
+	UPROPERTY(EditAnywhere)
+	bool bDebugDraw;
+	
 	// Called when the game starts
 	virtual void BeginPlay() override;
+	virtual void OnRegister() override;
 
 public:	
 	// Called every frame
 	virtual void TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction) override;
 
-		
+protected:
+
+public:
 	UFUNCTION(BlueprintCallable)
 	TArray<FString> GetMorphTargetSocketOptions() const;
-	
+
+	/**
+	 * Returns the socket closest to WorldHitLocation in the plane of WorldHitNormal.
+	 * Depth along the normal is ignored so that e.g. a straight frontal hit maps to the
+	 * center bumper socket rather than a corner socket displaced in depth.
+	 */
 	UFUNCTION(BlueprintCallable)
-	FName GetClosestMTSocket(FVector WorldHitLocation, float MaxDistance) const;
+	FName GetClosestMTSocket(FVector WorldHitLocation, FVector WorldHitNormal, float MaxDistance) const;
+
+	/** Accumulates damage on a named socket and updates its morph target blend weight (0–1 mapped to 0–Durability). */
+	UFUNCTION(BlueprintCallable)
+	void ApplyDamage(FName SocketName, float DamageAmount);
+
+	/** Finds the closest MT socket and applies DamageAmount to it. Pass the hit normal for accurate panel selection. */
+	UFUNCTION(BlueprintCallable)
+	void ApplyDamageAtLocation(FVector WorldHitLocation, FVector WorldHitNormal, float MaxDistance, float DamageAmount);
+
+private:
+
+	/** Accumulated damage per socket name; drives morph target blend weights at runtime. */
+	TMap<FName, float> DamageCache;
+
+	/** Returns the cached mesh component, or finds it via the outer actor if the cache is cold.
+	 *  Uses GetTypedOuter<AActor>() as a fallback because Blueprint-added component archetypes
+	 *  have a null OwnerPrivate while their outer chain still leads to the actor CDO. */
+	USkeletalMeshComponent* FindMeshComponent() const;
 };

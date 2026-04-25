@@ -78,6 +78,14 @@ ATimeTrialPlayerController          ← parallel controller (NOT a subclass of a
 - `bForceTouchControls` (Config property) forces mobile UI on desktop for testing
 - Legacy `DefaultInput.ini` bindings also present for compatibility
 
+### Damage / Deformation System
+
+- `UMorphTargetsComponent` (ClassGroup=Destruction) maps named sockets on the vehicle's `USkeletalMeshComponent` to morph targets for deformation on impact
+- Sockets eligible for damage are identified by the `MorphTargetSocketPrefix` (default `"MT_"`); the same prefix is mirrored in `ADerbyDemoPawn::DamageSocketPrefix`
+- `GetClosestMTSocket(WorldHitLocation, MaxDistance)` returns the nearest eligible socket to a hit point — intended to be called from Blueprint inside `OnImpact` to drive the geometry collection or morph target blend weight
+- `OnImpact(FVector ImpactLocation, float ImpulseMagnitude)` is a `BlueprintImplementableEvent` on `ADerbyDemoPawn`; it fires inside `NotifyHit` alongside the camera shake — mesh deformation logic must be implemented in Blueprint, not C++
+- `FMorphTargetData` (struct) pairs a socket name (with editor dropdown via `GetOptions="GetMorphTargetSocketOptions"`) with a `Durability` float; the array is editable per-actor in the Details panel
+
 ### Logging
 
 Use `LogDerbyDemo` (declared in `DerbyDemo.h`) for all project log output:

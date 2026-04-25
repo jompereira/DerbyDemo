@@ -212,7 +212,7 @@ protected:
 
 	/** Called on physics impact; use this in Blueprint to apply strain to the geometry collection */
 	UFUNCTION(BlueprintImplementableEvent, Category="Vehicle")
-	void OnImpact(FVector ImpactLocation, float ImpulseMagnitude);
+	void OnImpact(FVector ImpactLocation, FVector ImpactNormal, float ImpulseMagnitude);
 
 	/**
 	 * Returns the name of the socket (and matching morph target) closest to WorldHitLocation.

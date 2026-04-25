@@ -314,9 +314,21 @@ void ADerbyDemoPawn::NotifyHit(UPrimitiveComponent* MyComp, AActor* Other, UPrim
 {
 	Super::NotifyHit(MyComp, Other, OtherComp, bSelfMoved, HitLocation, HitNormal, NormalImpulse, Hit);
 
+	// The Chaos contact point lands on the convex hull (usually a corner).
+	// Trace back along the hit normal against the actual mesh body to find the
+	// true surface intersection, giving accurate panel-level hit location.
+	FVector RefinedLocation = HitLocation;
+	FHitResult SurfaceHit;
+	const FVector TraceStart = HitLocation + HitNormal * 50.f;
+	const FVector TraceEnd   = HitLocation - HitNormal * 50.f;
+	if (MyComp->LineTraceComponent(SurfaceHit, TraceStart, TraceEnd, FCollisionQueryParams::DefaultQueryParam))
+	{
+		RefinedLocation = SurfaceHit.ImpactPoint;
+	}
+
 	const float ImpulseMag = NormalImpulse.Size();
 	DoCameraShake(NormalImpulse);
-	OnImpact(HitLocation, ImpulseMag);
+	OnImpact(RefinedLocation, HitNormal, ImpulseMag);
 }
 
 void ADerbyDemoPawn::FlippedCheck()
