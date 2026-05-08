@@ -124,6 +124,8 @@ void UMorphTargetsComponent::ApplyDamage(FName SocketName, float DamageAmount)
 	Cached = FMath::Min(Cached + DamageAmount, Data->Durability);
 
 	Mesh->SetMorphTarget(SocketName, Cached / Data->Durability);
+
+	RefreshBodyScale(Mesh);
 }
 
 void UMorphTargetsComponent::ApplyDamageAtLocation(FVector WorldHitLocation, FVector WorldHitNormal, float MaxDistance, float DamageAmount)
@@ -186,5 +188,32 @@ FName UMorphTargetsComponent::GetClosestMTSocket(FVector WorldHitLocation, FVect
 	}
 
 	return ClosestSocket;
+}
+
+void UMorphTargetsComponent::RefreshBodyScale(USkeletalMeshComponent* Mesh)
+{
+	if (MaxBodyShrink <= 0.f || MorphTargets.IsEmpty())
+	{
+		return;
+	}
+
+	// Average damage ratio across all configured panels
+	float TotalRatio = 0.f;
+	for (const FMorphTargetData& D : MorphTargets)
+	{
+		if (D.Durability > 0.f)
+		{
+			TotalRatio += DamageCache.FindRef(D.SocketName) / D.Durability;
+		}
+	}
+	const float AvgRatio = TotalRatio / MorphTargets.Num();
+
+	// All MT_ sockets sit on the root bone, so any socket name resolves to the same body
+	FBodyInstance* BI = Mesh->GetBodyInstance();
+	if (BI)
+	{
+		const float Scale = 1.0f - MaxBodyShrink * AvgRatio;
+		BI->UpdateBodyScale(FVector(Scale), true);
+	}
 }
 

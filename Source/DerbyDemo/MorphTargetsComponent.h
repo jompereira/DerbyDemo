@@ -41,7 +41,15 @@ protected:
 	
 	UPROPERTY(EditAnywhere)
 	bool bDebugDraw;
-	
+
+	/**
+	 * Maximum fractional reduction in the physics body scale when all panels are fully deformed.
+	 * 0 = no physics body update; 0.15 = shrink 15% at full damage.
+	 * All MT_ sockets share the root body, so this scales the entire chassis hull.
+	 */
+	UPROPERTY(EditAnywhere, meta=(ClampMin="0.0", ClampMax="0.5"))
+	float MaxBodyShrink = 0.0f;
+
 	// Called when the game starts
 	virtual void BeginPlay() override;
 	virtual void OnRegister() override;
@@ -81,4 +89,8 @@ private:
 	 *  Uses GetTypedOuter<AActor>() as a fallback because Blueprint-added component archetypes
 	 *  have a null OwnerPrivate while their outer chain still leads to the actor CDO. */
 	USkeletalMeshComponent* FindMeshComponent() const;
+
+	/** Recomputes the root physics body scale from the average panel damage ratio.
+	 *  Called after every ApplyDamage so the single root body stays in sync with all panels. */
+	void RefreshBodyScale(USkeletalMeshComponent* Mesh);
 };
