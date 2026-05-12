@@ -21,6 +21,10 @@
 
 ADerbyDemoPawn::ADerbyDemoPawn()
 {
+	bReplicates = true;
+	SetReplicatingMovement(true);
+	SpawnCollisionHandlingMethod = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+
 	// construct the front camera boom
 	FrontSpringArm = CreateDefaultSubobject<USpringArmComponent>(TEXT("Front Spring Arm"));
 	FrontSpringArm->SetupAttachment(GetMesh());

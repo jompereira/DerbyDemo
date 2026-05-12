@@ -81,8 +81,11 @@ public:
 
 protected:
 
-	/** Pawn setup */
+	/** Pawn setup (server) */
 	virtual void OnPossess(APawn* InPawn) override;
+
+	/** Pawn setup (owning client) */
+	virtual void AcknowledgePossession(APawn* P) override;
 
 	/** Handles pawn destruction and respawning */
 	UFUNCTION()

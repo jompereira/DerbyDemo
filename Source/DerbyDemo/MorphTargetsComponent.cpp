@@ -2,21 +2,32 @@
 
 #include "MorphTargetsComponent.h"
 #include "DrawDebugHelpers.h"
+#include "Materials/MaterialInstanceDynamic.h"
 
-// Sets default values for this component's properties
 UMorphTargetsComponent::UMorphTargetsComponent()
 {
-	// Set this component to be initialized when the game starts, and to be ticked every frame.  You can turn these features
-	// off to improve performance if you don't need them.
 	PrimaryComponentTick.bCanEverTick = true;
+	SetIsReplicatedByDefault(true);
+}
 
-	// ...
+void UMorphTargetsComponent::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
+{
+	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
+	DOREPLIFETIME(UMorphTargetsComponent, DamageState);
 }
 
 // Called when the game starts
 void UMorphTargetsComponent::BeginPlay()
 {
 	Super::BeginPlay();
+
+	if (DamageMaterialParameter != NAME_None)
+	{
+		if (USkeletalMeshComponent* Mesh = FindMeshComponent())
+		{
+			DamageMaterialInstance = Mesh->CreateDynamicMaterialInstance(DamageMaterialSlot);
+		}
+	}
 }
 
 void UMorphTargetsComponent::OnRegister()
@@ -53,7 +64,8 @@ void UMorphTargetsComponent::TickComponent(float DeltaTime, ELevelTick TickType,
 			continue;
 		}
 
-		const float Cached = DamageCache.FindRef(Data.SocketName);
+		const FDamageEntry* Entry = DamageState.FindByPredicate([&](const FDamageEntry& E) { return E.SocketName == Data.SocketName; });
+		const float Cached = Entry ? Entry->Accumulated : 0.f;
 		const float BlendWeight = Data.Durability > 0.f ? Cached / Data.Durability : 0.f;
 		const FVector Location = Mesh->GetSocketLocation(Data.SocketName);
 		const FString Label = FString::Printf(TEXT("%s: %.2f"), *Data.SocketName.ToString(), BlendWeight);
@@ -99,6 +111,12 @@ TArray<FString> UMorphTargetsComponent::GetMorphTargetSocketOptions() const
 
 void UMorphTargetsComponent::ApplyDamage(FName SocketName, float DamageAmount)
 {
+	// Damage is server-authoritative; clients receive the result via OnRep_DamageState.
+	if (!GetOwner() || !GetOwner()->HasAuthority())
+	{
+		return;
+	}
+
 	USkeletalMeshComponent* Mesh = FindMeshComponent();
 	if (SocketName == NAME_None || !Mesh)
 	{
@@ -110,22 +128,23 @@ void UMorphTargetsComponent::ApplyDamage(FName SocketName, float DamageAmount)
 		return D.SocketName == SocketName;
 	});
 
-	if (!Data || Data->Durability <= 0.f)
+	if (!Data || Data->Durability <= 0.f || !Mesh->DoesSocketExist(SocketName))
 	{
 		return;
 	}
 
-	if (!Mesh->DoesSocketExist(SocketName))
+	FDamageEntry* Entry = DamageState.FindByPredicate([&](const FDamageEntry& E) { return E.SocketName == SocketName; });
+	if (!Entry)
 	{
-		return;
+		Entry = &DamageState.AddDefaulted_GetRef();
+		Entry->SocketName = SocketName;
 	}
+	Entry->Accumulated = FMath::Min(Entry->Accumulated + DamageAmount, Data->Durability);
 
-	float& Cached = DamageCache.FindOrAdd(SocketName);
-	Cached = FMath::Min(Cached + DamageAmount, Data->Durability);
-
-	Mesh->SetMorphTarget(SocketName, Cached / Data->Durability);
+	Mesh->SetMorphTarget(SocketName, Entry->Accumulated / Data->Durability);
 
 	RefreshBodyScale(Mesh);
+	RefreshDamageMaterial();
 }
 
 void UMorphTargetsComponent::ApplyDamageAtLocation(FVector WorldHitLocation, FVector WorldHitNormal, float MaxDistance, float DamageAmount)
@@ -135,6 +154,27 @@ void UMorphTargetsComponent::ApplyDamageAtLocation(FVector WorldHitLocation, FVe
 	{
 		ApplyDamage(Socket, DamageAmount);
 	}
+}
+
+void UMorphTargetsComponent::OnRep_DamageState()
+{
+	USkeletalMeshComponent* Mesh = FindMeshComponent();
+	if (!Mesh)
+	{
+		return;
+	}
+
+	for (const FDamageEntry& Entry : DamageState)
+	{
+		const FMorphTargetData* Data = MorphTargets.FindByPredicate([&](const FMorphTargetData& D) { return D.SocketName == Entry.SocketName; });
+		if (Data && Data->Durability > 0.f)
+		{
+			Mesh->SetMorphTarget(Entry.SocketName, Entry.Accumulated / Data->Durability);
+		}
+	}
+
+	RefreshBodyScale(Mesh);
+	RefreshDamageMaterial();
 }
 
 FName UMorphTargetsComponent::GetClosestMTSocket(FVector WorldHitLocation, FVector WorldHitNormal, const float MaxDistance) const
@@ -190,6 +230,26 @@ FName UMorphTargetsComponent::GetClosestMTSocket(FVector WorldHitLocation, FVect
 	return ClosestSocket;
 }
 
+void UMorphTargetsComponent::RefreshDamageMaterial()
+{
+	if (!DamageMaterialInstance || DamageMaterialParameter == NAME_None)
+	{
+		return;
+	}
+
+	float TotalRatio = 0.f;
+	for (const FMorphTargetData& D : MorphTargets)
+	{
+		if (D.Durability > 0.f)
+		{
+			const FDamageEntry* Entry = DamageState.FindByPredicate([&](const FDamageEntry& E) { return E.SocketName == D.SocketName; });
+			TotalRatio += Entry ? Entry->Accumulated / D.Durability : 0.f;
+		}
+	}
+	const float AvgRatio = MorphTargets.Num() > 0 ? TotalRatio / MorphTargets.Num() : 0.f;
+	DamageMaterialInstance->SetScalarParameterValue(DamageMaterialParameter, AvgRatio);
+}
+
 void UMorphTargetsComponent::RefreshBodyScale(USkeletalMeshComponent* Mesh)
 {
 	if (MaxBodyShrink <= 0.f || MorphTargets.IsEmpty())
@@ -197,13 +257,13 @@ void UMorphTargetsComponent::RefreshBodyScale(USkeletalMeshComponent* Mesh)
 		return;
 	}
 
-	// Average damage ratio across all configured panels
 	float TotalRatio = 0.f;
 	for (const FMorphTargetData& D : MorphTargets)
 	{
 		if (D.Durability > 0.f)
 		{
-			TotalRatio += DamageCache.FindRef(D.SocketName) / D.Durability;
+			const FDamageEntry* Entry = DamageState.FindByPredicate([&](const FDamageEntry& E) { return E.SocketName == D.SocketName; });
+			TotalRatio += Entry ? Entry->Accumulated / D.Durability : 0.f;
 		}
 	}
 	const float AvgRatio = TotalRatio / MorphTargets.Num();

@@ -97,11 +97,15 @@ void ADerbyDemoPlayerController::OnPossess(APawn* InPawn)
 {
 	Super::OnPossess(InPawn);
 
-	// get a pointer to the controlled pawn
 	VehiclePawn = CastChecked<ADerbyDemoPawn>(InPawn);
-
-	// subscribe to the pawn's OnDestroyed delegate
 	VehiclePawn->OnDestroyed.AddDynamic(this, &ADerbyDemoPlayerController::OnPawnDestroyed);
+}
+
+void ADerbyDemoPlayerController::AcknowledgePossession(APawn* P)
+{
+	Super::AcknowledgePossession(P);
+
+	VehiclePawn = Cast<ADerbyDemoPawn>(P);
 }
 
 void ADerbyDemoPlayerController::OnPawnDestroyed(AActor* DestroyedPawn)

@@ -8,10 +8,24 @@ DerbyDemo is an Unreal Engine 5 vehicle racing game with three game mode variant
 
 ## Building
 
-- Open `DerbyDemo.sln` in Visual Studio 2022 and build the `DerbyDemo` project
-- Or right-click `DerbyDemo.uproject` → "Generate Visual Studio project files", then build from VS
-- Required VS components are listed in `.vsconfig` (C++ toolchain, Windows SDK 22621, Unreal debugging tools)
-- Build artifacts go to `Binaries/` and `Intermediate/`
+The project uses a **source-built engine** located at `C:/Projects/UnrealEngine` (registered via HKCU as `{9407D2CB-475E-D60D-5339-AEA28AD3AB51}`). It is not an Epic Games Launcher install.
+
+**Command-line (PowerShell) — editor module:**
+```powershell
+& "C:\Projects\UnrealEngine\Engine\Build\BatchFiles\Build.bat" DerbyDemoEditor Win64 Development "C:\Projects\DerbyDemo\DerbyDemo.uproject" -waitmutex
+```
+
+**Command-line — game (standalone):**
+```powershell
+& "C:\Projects\UnrealEngine\Engine\Build\BatchFiles\Build.bat" DerbyDemo Win64 Development "C:\Projects\DerbyDemo\DerbyDemo.uproject" -waitmutex
+```
+
+**From Visual Studio 2022:**
+- Open `DerbyDemo.sln` (or right-click `DerbyDemo.uproject` → "Generate Visual Studio project files")
+- Build target: `DerbyDemoEditor | Development | Win64`
+- Required VS components: C++ toolchain, Windows SDK 22621, Unreal debugging tools (see `.vsconfig`)
+
+Build artifacts go to `Binaries/` and `Intermediate/`. UHT runs automatically as part of the build — if you add or change `UCLASS`/`USTRUCT`/`UFUNCTION` macros, the next build will regenerate the `*.generated.h` files.
 
 ## Running
 
@@ -22,7 +36,7 @@ Launch from the Unreal Editor. Three playable maps:
 
 ## Module Dependencies
 
-Declared in `Source/DerbyDemo/DerbyDemo.Build.cs`. Core dependencies: `Core`, `CoreUObject`, `Engine`, `EnhancedInput`, `ChaosVehicles`, `PhysicsCore`, `UMG`, `Slate`, `InputCore`.
+Declared in `Source/DerbyDemo/DerbyDemo.Build.cs`. Core dependencies: `Core`, `CoreUObject`, `Engine`, `EnhancedInput`, `ChaosVehicles`, `PhysicsCore`, `UMG`, `Slate`, `InputCore`, `GeometryCollectionEngine`.
 
 ## Architecture
 
@@ -53,6 +67,8 @@ ATimeTrialPlayerController          ← parallel controller (NOT a subclass of a
 - Flip detection uses two consecutive timer checks (`FlipCheckTime` interval, default 3 s): first failed check sets `bPreviousFlipCheck`, second triggers `DoResetVehicle()`; "flipped" is defined as the vehicle's up-dot falling below `FlipCheckMinDot` (default −0.2)
 - `DisplayDebug` is overridden to add per-wheel lateral slip telemetry to the `showdebug vehicle` HUD
 - Angular damping is set to 3.0 in `Tick` when airborne, 0.0 when grounded
+- **Collision camera shake:** `CollisionCameraShake` (subclass of `UCameraShakeBase`) is triggered in `NotifyHit` via `DoCameraShake(NormalImpulse)`. Shake scale is linearly mapped from impulse magnitude: 0 at `CollisionShakeMinImpulse` (default 800 N·s), 1.0 at `CollisionShakeMaxImpulse` (default 5000 N·s). Configure both thresholds and the shake asset in the Blueprint Details panel
+- **Geometry collection self-collision:** `BeginPlay` iterates all `UGeometryCollectionComponent` children on the vehicle and sets `ECC_Vehicle` to `ECR_Ignore`, preventing debris fragments from colliding with the vehicle's own skeletal mesh body
 - Wheel variants follow a naming convention: `UDerbyDemo[Variant]Wheel[Front|Rear]`
 - **Wheel tuning:** `UChaosVehicleWheel` constructor values (including `LateralSlipGraph` keys) always override anything set in the Blueprint Details panel at PIE startup. Edit wheel properties in C++, not the editor.
 
@@ -80,11 +96,24 @@ ATimeTrialPlayerController          ← parallel controller (NOT a subclass of a
 
 ### Damage / Deformation System
 
-- `UMorphTargetsComponent` (ClassGroup=Destruction) maps named sockets on the vehicle's `USkeletalMeshComponent` to morph targets for deformation on impact
-- Sockets eligible for damage are identified by the `MorphTargetSocketPrefix` (default `"MT_"`); the same prefix is mirrored in `ADerbyDemoPawn::DamageSocketPrefix`
-- `GetClosestMTSocket(WorldHitLocation, MaxDistance)` returns the nearest eligible socket to a hit point — intended to be called from Blueprint inside `OnImpact` to drive the geometry collection or morph target blend weight
-- `OnImpact(FVector ImpactLocation, float ImpulseMagnitude)` is a `BlueprintImplementableEvent` on `ADerbyDemoPawn`; it fires inside `NotifyHit` alongside the camera shake — mesh deformation logic must be implemented in Blueprint, not C++
-- `FMorphTargetData` (struct) pairs a socket name (with editor dropdown via `GetOptions="GetMorphTargetSocketOptions"`) with a `Durability` float; the array is editable per-actor in the Details panel
+**Data — `FMorphTargetData` struct**
+- Pairs a `SocketName` (FName) with a `Durability` (float); the `MorphTargets` array on the component is configured per-Blueprint in the Details panel
+- Socket names must match both a socket on the skeletal mesh **and** a morph target of the same name; the `MT_` prefix convention is used for both
+
+**Component — `UMorphTargetsComponent`**
+- Add to any vehicle Blueprint; automatically finds the owner's `USkeletalMeshComponent` on register via `FindMeshComponent()`, which falls back to `GetTypedOuter<AActor>()` when `OwnerPrivate` is null (Blueprint-editor archetype context)
+- `ApplyDamage(FName SocketName, float DamageAmount)` — accumulates damage against `Durability` in `DamageCache`, then calls `SetMorphTarget` with the 0–1 blend weight; clamped so damage never exceeds `Durability`. After each call it also runs `RefreshBodyScale` and `RefreshDamageMaterial`
+- `ApplyDamageAtLocation(FVector WorldHitLocation, FVector WorldHitNormal, float MaxDistance, float DamageAmount)` — finds the closest configured socket then calls `ApplyDamage`; intended as the single Blueprint call-site inside `OnImpact`
+- `GetClosestMTSocket(WorldHitLocation, WorldHitNormal, MaxDistance)` — iterates `MorphTargets` (not all mesh sockets); projects both the hit location and each socket into mesh local space, then masks out the dominant axis of the hit normal so distance is compared **in the plane of impact** (not 3D). This prevents corner sockets from winning over a center socket when the physics contact point is offset in depth. Skips any socket that fails `DoesSocketExist`
+- `GetMorphTargetSocketOptions()` — returns all socket names on the mesh that begin with `MorphTargetSocketPrefix` (default `"MT_"`); useful for editor dropdowns
+- `bDebugDraw` — when enabled, draws each morph target's socket name and current blend weight as an orange world-space label every tick
+- **Physics body shrink:** `MaxBodyShrink` (0–0.5, default 0) scales the root `FBodyInstance` by `1 − MaxBodyShrink × avgDamageRatio` after every hit. All `MT_` sockets share the root bone, so this shrinks the entire chassis hull uniformly. Set to 0 to disable
+- **Material damage:** `DamageMaterialParameter` (FName, default `NAME_None`) and `DamageMaterialSlot` (int32, default 0) drive a scalar material parameter with the average panel damage ratio (0–1). A `UMaterialInstanceDynamic` is created on `BeginPlay`; leave `DamageMaterialParameter` as `NAME_None` to skip this entirely
+
+**Pawn integration — `ADerbyDemoPawn::NotifyHit`**
+- Chaos physics contact points land on convex hull corners, not on the visual mesh surface. `NotifyHit` refines the hit location by firing `LineTraceComponent` along the hit normal against `MyComp` (50 cm in each direction); the `ImpactPoint` from that trace replaces the raw contact point before it reaches `OnImpact`
+- `OnImpact(FVector ImpactLocation, FVector ImpactNormal, float ImpulseMagnitude)` is a `BlueprintImplementableEvent`; Blueprint implements the deformation logic and calls `ApplyDamageAtLocation` on `UMorphTargetsComponent` passing all three values
+- **Physics asset accuracy matters:** the line trace refines within whatever physics bodies exist; tighter convex bodies per panel (front bumper, rear, sides) in the Physics Asset Editor improve contact point accuracy further
 
 ### Logging
 

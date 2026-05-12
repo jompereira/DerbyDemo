@@ -4,6 +4,7 @@
 
 #include "CoreMinimal.h"
 #include "Components/ActorComponent.h"
+#include "Net/UnrealNetwork.h"
 #include "MorphTargetsComponent.generated.h"
 
 USTRUCT(BlueprintType)
@@ -17,6 +18,14 @@ struct FMorphTargetData
 	UPROPERTY(EditAnywhere)
 	float Durability;
 	
+};
+
+USTRUCT()
+struct FDamageEntry
+{
+	GENERATED_BODY()
+	UPROPERTY() FName SocketName;
+	UPROPERTY() float Accumulated = 0.f;
 };
 
 UCLASS(ClassGroup=(Destruction), meta=(BlueprintSpawnableComponent) )
@@ -50,6 +59,18 @@ protected:
 	UPROPERTY(EditAnywhere, meta=(ClampMin="0.0", ClampMax="0.5"))
 	float MaxBodyShrink = 0.0f;
 
+	/**
+	 * Name of a scalar material parameter to drive with overall damage (0–1).
+	 * A dynamic material instance is created on DamageMaterialSlot at BeginPlay.
+	 * Leave as NAME_None to disable material damage entirely.
+	 */
+	UPROPERTY(EditAnywhere)
+	FName DamageMaterialParameter = NAME_None;
+
+	/** Material slot index on the skeletal mesh to create the dynamic instance from. */
+	UPROPERTY(EditAnywhere)
+	int32 DamageMaterialSlot = 0;
+
 	// Called when the game starts
 	virtual void BeginPlay() override;
 	virtual void OnRegister() override;
@@ -80,10 +101,19 @@ public:
 	UFUNCTION(BlueprintCallable)
 	void ApplyDamageAtLocation(FVector WorldHitLocation, FVector WorldHitNormal, float MaxDistance, float DamageAmount);
 
+	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutProps) const override;
+
 private:
 
-	/** Accumulated damage per socket name; drives morph target blend weights at runtime. */
-	TMap<FName, float> DamageCache;
+	/** Server-authoritative damage per socket; replicated to all clients. */
+	UPROPERTY(ReplicatedUsing=OnRep_DamageState)
+	TArray<FDamageEntry> DamageState;
+
+	UFUNCTION()
+	void OnRep_DamageState();
+
+	UPROPERTY()
+	TObjectPtr<UMaterialInstanceDynamic> DamageMaterialInstance;
 
 	/** Returns the cached mesh component, or finds it via the outer actor if the cache is cold.
 	 *  Uses GetTypedOuter<AActor>() as a fallback because Blueprint-added component archetypes
@@ -93,4 +123,7 @@ private:
 	/** Recomputes the root physics body scale from the average panel damage ratio.
 	 *  Called after every ApplyDamage so the single root body stays in sync with all panels. */
 	void RefreshBodyScale(USkeletalMeshComponent* Mesh);
+
+	/** Updates DamageMaterialParameter on DamageMaterialInstance with the average panel damage ratio. */
+	void RefreshDamageMaterial();
 };
