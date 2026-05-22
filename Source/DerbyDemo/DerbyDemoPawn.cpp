@@ -302,7 +302,6 @@ void ADerbyDemoPawn::DoCameraShake(const FVector& NormalImpulse)
 	}
 
 	const float ImpulseMag = NormalImpulse.Size();
-	UE_LOG(LogDerbyDemo, Log, TEXT("Collision impulse: %.1f N·s"), ImpulseMag);
 
 	if (CollisionShakeMinImpulse)
 	{
@@ -329,6 +328,10 @@ void ADerbyDemoPawn::NotifyHit(UPrimitiveComponent* MyComp, AActor* Other, UPrim
 	{
 		RefinedLocation = SurfaceHit.ImpactPoint;
 	}
+	
+	// DrawDebugSphere(GetWorld(), HitLocation, 16.f, 16, FColor::Blue, false, 10.0f);
+	// DrawDebugSphere(GetWorld(), RefinedLocation, 16.f, 16, FColor::Red, false, 10.0f);
+	
 
 	const float ImpulseMag = NormalImpulse.Size();
 	DoCameraShake(NormalImpulse);

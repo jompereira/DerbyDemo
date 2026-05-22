@@ -18,7 +18,8 @@ public class DerbyDemo : ModuleRules
 			"PhysicsCore",
 			"UMG",
 			"Slate",
-			"GeometryCollectionEngine"
+			"GeometryCollectionEngine",
+			"AIModule"
 		});
 
 		PublicIncludePaths.AddRange(new string[] {
