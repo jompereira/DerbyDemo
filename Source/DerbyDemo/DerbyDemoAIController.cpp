@@ -72,6 +72,33 @@ void ADerbyDemoAIController::Tick(float DeltaTime)
 	}
 
 	// -------------------------------------------------------------------------
+	// StartingRound state — drive to arena centre before engaging; no target needed.
+	// -------------------------------------------------------------------------
+	if (CurrentState == EAIState::StartingRound)
+	{
+		const FVector MyLocation  = VehiclePawn->GetActorLocation();
+		const FVector ToCenter    = ArenaCenter - MyLocation;
+		const float   DistToCenter = ToCenter.Size();
+
+		if (DistToCenter <= StartingRoundRadius)
+		{
+			// Arrived — begin engaging enemies.
+			TransitionToState(EAIState::Seeking);
+			// Fall through to normal target-seeking behavior this tick.
+		}
+		else
+		{
+			const FVector ToCenterDir  = ToCenter.GetSafeNormal();
+			const float   HeadingFactor = FMath::Clamp(
+				FVector::DotProduct(VehiclePawn->GetActorForwardVector(), ToCenterDir),
+				0.0f, 1.0f);
+			VehiclePawn->DoSteering(ComputeSteering(ToCenterDir));
+			VehiclePawn->DoThrottle(FMath::Lerp(MinThrottle, 1.0f, HeadingFactor));
+			return;
+		}
+	}
+
+	// -------------------------------------------------------------------------
 	// Target acquisition
 	// -------------------------------------------------------------------------
 	ADerbyDemoPawn* Target = FindNearestEnemy();
