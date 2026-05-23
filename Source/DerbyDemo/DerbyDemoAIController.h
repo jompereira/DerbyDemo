@@ -9,10 +9,11 @@ class ADerbyDemoPawn;
 UENUM(BlueprintType)
 enum class EAIState : uint8
 {
-	Seeking   UMETA(DisplayName="Seeking"),
-	Ramming   UMETA(DisplayName="Ramming"),
-	UTurning  UMETA(DisplayName="U-Turning"),
-	Reversing UMETA(DisplayName="Reversing"),
+	StartingRound UMETA(DisplayName="Starting Round"),
+	Seeking       UMETA(DisplayName="Seeking"),
+	Ramming       UMETA(DisplayName="Ramming"),
+	UTurning      UMETA(DisplayName="U-Turning"),
+	Reversing     UMETA(DisplayName="Reversing"),
 };
 
 UCLASS()
@@ -60,13 +61,21 @@ protected:
 	UPROPERTY(EditAnywhere, Category="AI|Seek", meta=(ClampMin="0.0"))
 	float MaxPredictionTime = 0.3f;
 
+	/** World-space position of the arena centre; AI drives here at round start before engaging */
+	UPROPERTY(EditAnywhere, Category="AI|Starting Round")
+	FVector ArenaCenter = FVector::ZeroVector;
+
+	/** Radius (cm) within which the AI considers itself to have reached the arena centre */
+	UPROPERTY(EditAnywhere, Category="AI|Starting Round", meta=(ClampMin="0.0"))
+	float StartingRoundRadius = 500.0f;
+
 private:
 	UPROPERTY()
 	TObjectPtr<ADerbyDemoPawn> VehiclePawn;
 
 	/** Current state — visible in the Details panel during PIE for easy debugging */
 	UPROPERTY(VisibleInstanceOnly, Category="AI|Debug")
-	EAIState CurrentState = EAIState::Seeking;
+	EAIState CurrentState = EAIState::StartingRound;
 
 	float TimeAtLowSpeed = 0.0f;
 	float ReverseTimeRemaining = 0.0f;
