@@ -303,9 +303,13 @@ void ADerbyDemoPawn::DoCameraShake(const FVector& NormalImpulse)
 
 	const float ImpulseMag = NormalImpulse.Size();
 
-	if (CollisionShakeMinImpulse)
+	// Only shake if the impulse exceeds the minimum threshold.
+	// Scale linearly from 0 at CollisionShakeMinImpulse to 1 at CollisionShakeMaxImpulse.
+	if (ImpulseMag >= CollisionShakeMinImpulse)
 	{
-		const float Scale = FMath::Clamp(ImpulseMag / CollisionShakeMaxImpulse, 0.0f, 1.0f);
+		const float Scale = FMath::Clamp(
+			(ImpulseMag - CollisionShakeMinImpulse) / (CollisionShakeMaxImpulse - CollisionShakeMinImpulse),
+			0.0f, 1.0f);
 		if (Scale > 0.0f)
 		{
 			PC->ClientStartCameraShake(CollisionCameraShake, Scale);
