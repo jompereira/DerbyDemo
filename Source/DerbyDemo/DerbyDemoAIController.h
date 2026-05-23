@@ -12,6 +12,7 @@ enum class EAIState : uint8
 	StartingRound UMETA(DisplayName="Starting Round"),
 	Seeking       UMETA(DisplayName="Seeking"),
 	Ramming       UMETA(DisplayName="Ramming"),
+	Fleeing       UMETA(DisplayName="Fleeing"),
 	UTurning      UMETA(DisplayName="U-Turning"),
 	Reversing     UMETA(DisplayName="Reversing"),
 };
@@ -61,6 +62,20 @@ protected:
 	UPROPERTY(EditAnywhere, Category="AI|Seek", meta=(ClampMin="0.0"))
 	float MaxPredictionTime = 0.3f;
 
+	/** Maximum time (seconds) the AI continuously rams before breaking off.
+	 *  Prevents vehicles gluing to one another indefinitely. */
+	UPROPERTY(EditAnywhere, Category="AI|Ramming", meta=(ClampMin="0.0"))
+	float RamTimeLimit = 2.0f;
+
+	/** Maximum time (seconds) the AI spends Seeking before giving up and fleeing.
+	 *  Breaks endless pursuit loops and gives the arena room to breathe. */
+	UPROPERTY(EditAnywhere, Category="AI|Seek", meta=(ClampMin="0.0"))
+	float SeekTimeLimit = 6.0f;
+
+	/** How long (seconds) the AI spends in the Fleeing state before re-engaging. */
+	UPROPERTY(EditAnywhere, Category="AI|Fleeing", meta=(ClampMin="0.0"))
+	float FleeTime = 3.0f;
+
 	/** World-space position of the arena centre; AI drives here at round start before engaging */
 	UPROPERTY(EditAnywhere, Category="AI|Starting Round")
 	FVector ArenaCenter = FVector::ZeroVector;
@@ -79,6 +94,9 @@ private:
 
 	float TimeAtLowSpeed = 0.0f;
 	float ReverseTimeRemaining = 0.0f;
+	float RamTimeElapsed = 0.0f;
+	float SeekTimeElapsed = 0.0f;
+	float FleeTimeRemaining = 0.0f;
 
 	void TransitionToState(EAIState NewState);
 	float ComputeSteering(FVector ToAim) const;

@@ -31,10 +31,11 @@ void ADerbyDemoAIController::Tick(float DeltaTime)
 	}
 
 	// -------------------------------------------------------------------------
-	// Stuck detection — suppressed while Ramming (we're actively hitting something)
-	// and while already Reversing (avoid re-triggering mid-maneuver).
+	// Stuck detection — suppressed while Ramming (we're actively hitting something),
+	// while already Reversing (avoid re-triggering mid-maneuver), and while Fleeing
+	// (the vehicle intentionally slows during its breakaway turn).
 	// -------------------------------------------------------------------------
-	if (CurrentState != EAIState::Reversing && CurrentState != EAIState::Ramming)
+	if (CurrentState != EAIState::Reversing && CurrentState != EAIState::Ramming && CurrentState != EAIState::Fleeing)
 	{
 		if (VehiclePawn->GetVelocity().Size() < StuckSpeedThreshold)
 		{
@@ -99,6 +100,43 @@ void ADerbyDemoAIController::Tick(float DeltaTime)
 	}
 
 	// -------------------------------------------------------------------------
+	// Fleeing state — drive away from the nearest enemy; no lock-on needed.
+	// -------------------------------------------------------------------------
+	if (CurrentState == EAIState::Fleeing)
+	{
+		FleeTimeRemaining -= DeltaTime;
+		if (FleeTimeRemaining <= 0.0f)
+		{
+			// Flee complete — re-engage.
+			TransitionToState(EAIState::Seeking);
+			// Fall through to normal target-seeking behavior this tick.
+		}
+		else
+		{
+			const FVector MyLocation     = VehiclePawn->GetActorLocation();
+			ADerbyDemoPawn* NearestEnemy = FindNearestEnemy();
+
+			if (NearestEnemy)
+			{
+				// Steer directly away; use the same heading-factor throttle as Seeking
+				// so the vehicle accelerates once it has turned to face the exit direction.
+				const FVector AwayFromEnemy = (MyLocation - NearestEnemy->GetActorLocation()).GetSafeNormal();
+				const float   HeadingFactor = FMath::Clamp(
+					FVector::DotProduct(VehiclePawn->GetActorForwardVector(), AwayFromEnemy),
+					0.0f, 1.0f);
+				VehiclePawn->DoSteering(ComputeSteering(AwayFromEnemy));
+				VehiclePawn->DoThrottle(FMath::Lerp(MinThrottle, 1.0f, HeadingFactor));
+			}
+			else
+			{
+				// Nothing to flee from — transition immediately.
+				TransitionToState(EAIState::Seeking);
+			}
+			return;
+		}
+	}
+
+	// -------------------------------------------------------------------------
 	// Target acquisition
 	// -------------------------------------------------------------------------
 	ADerbyDemoPawn* Target = FindNearestEnemy();
@@ -126,14 +164,20 @@ void ADerbyDemoAIController::Tick(float DeltaTime)
 	switch (CurrentState)
 	{
 	case EAIState::Seeking:
+		SeekTimeElapsed += DeltaTime;
 		if (DistToTarget < RamDistance)
 			TransitionToState(EAIState::Ramming);
+		else if (SeekTimeElapsed >= SeekTimeLimit)
+			TransitionToState(EAIState::Fleeing);    // chased too long without contact — take a breath
 		else if (ForwardDot < 0.0f)
 			TransitionToState(EAIState::UTurning);
 		break;
 
 	case EAIState::Ramming:
-		if (ForwardDot < 0.0f)
+		RamTimeElapsed += DeltaTime;
+		if (RamTimeElapsed >= RamTimeLimit)
+			TransitionToState(EAIState::Fleeing);    // been ramming too long — break off
+		else if (ForwardDot < 0.0f)
 			TransitionToState(EAIState::UTurning);   // overshot — turn around
 		else if (DistToTarget >= RamDistance)
 			TransitionToState(EAIState::Seeking);    // target escaped
@@ -201,10 +245,10 @@ void ADerbyDemoAIController::TransitionToState(EAIState NewState)
 		*UEnum::GetValueAsString(CurrentState),
 		*UEnum::GetValueAsString(NewState));
 
-	if (NewState == EAIState::Reversing)
-	{
-		ReverseTimeRemaining = ReverseTime;
-	}
+	if (NewState == EAIState::Reversing) ReverseTimeRemaining = ReverseTime;
+	if (NewState == EAIState::Ramming)   RamTimeElapsed        = 0.0f;
+	if (NewState == EAIState::Seeking)   SeekTimeElapsed       = 0.0f;
+	if (NewState == EAIState::Fleeing)   FleeTimeRemaining     = FleeTime;
 
 	CurrentState = NewState;
 }
