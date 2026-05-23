@@ -107,7 +107,9 @@ UDecalComponent* UDecalPoolSubsystem::SpawnPooledDecal(
 	if (!IsValid(Slot)) return nullptr;
 
 	UDecalComponent* Decal = Slot->GetDecal();
-	if (!Decal) return nullptr;
+	// IsValid guards against slots whose UDecalComponent was destroyed by a
+	// previous SetFadeOut (see below for why that was happening).
+	if (!IsValid(Decal)) return nullptr;
 
 	// --- Detach from any previous parent ---
 	// A recycled slot may still be attached to a different vehicle.
@@ -128,10 +130,19 @@ UDecalComponent* UDecalPoolSubsystem::SpawnPooledDecal(
 	// --- Configure ---
 	Decal->SetDecalMaterial(Material);
 	Decal->DecalSize = Size;
+	// Match SpawnDecalAttached: make size immune to parent component scale.
+	Decal->SetUsingAbsoluteScale(true);
 
-	// Restart the fade clock from now.
-	// SetFadeOut resets the internal timer so recycled slots always get a full lifespan.
+	// Restart the visual fade clock from now.
+	//
+	// WARNING: UDecalComponent::SetFadeOut always calls SetLifeSpan(FadeStart+FadeDuration)
+	// internally, which sets a timer that fires LifeSpanCallback → DestroyComponent().
+	// For a pooled actor that must stay alive, this destroys the root UDecalComponent
+	// and breaks the slot permanently.  Immediately call SetLifeSpan(0) to cancel
+	// that timer; the visual fade in the render proxy is unaffected.
 	Decal->SetFadeOut(LifeSpan, FadeDuration, /*bDestroyOwnerAfterFade=*/false);
+	Decal->SetLifeSpan(0.0f); // Cancel the self-destruction timer; pool owns the lifetime.
+
 	Decal->MarkRenderStateDirty();
 
 	return Decal;
