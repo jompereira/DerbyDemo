@@ -35,7 +35,7 @@ void ADerbyDemoAIController::Tick(float DeltaTime)
 	// while already Reversing (avoid re-triggering mid-maneuver), and while Fleeing
 	// (the vehicle intentionally slows during its breakaway turn).
 	// -------------------------------------------------------------------------
-	if (CurrentState != EAIState::Reversing && CurrentState != EAIState::Ramming && CurrentState != EAIState::Fleeing)
+	if (CurrentState != EAIState::Reversing)
 	{
 		if (VehiclePawn->GetVelocity().Size() < StuckSpeedThreshold)
 		{
