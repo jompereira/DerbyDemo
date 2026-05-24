@@ -126,21 +126,33 @@ void ADerbyDemoAIController::Tick(float DeltaTime)
 
 			if (NearestEnemy)
 			{
-				// Steer directly away; use the same heading-factor throttle as Seeking
-				// so the vehicle accelerates once it has turned to face the exit direction.
-				const FVector AwayFromEnemy = (MyLocation - NearestEnemy->GetActorLocation()).GetSafeNormal();
-				const float   HeadingFactor = FMath::Clamp(
-					FVector::DotProduct(VehiclePawn->GetActorForwardVector(), AwayFromEnemy),
-					0.0f, 1.0f);
 				float WallDanger = 0.0f;
 				const float WallAvoid   = ComputeWallAvoidanceSteering(WallDanger);
 				const float SteerDanger = FMath::Abs(WallAvoid);
-				const float SteerValue = FMath::Clamp(
-					FMath::Lerp(ComputeSteering(AwayFromEnemy), WallAvoid, SteerDanger), -1.0f, 1.0f);
-				VehiclePawn->DoSteering(SteerValue);
-				const float Throttle = FMath::Lerp(MinThrottle, 1.0f, HeadingFactor)
-				                       * FMath::Lerp(1.0f, WhiskerMinThrottleOnWall, WallDanger);
-				VehiclePawn->DoThrottle(Throttle);
+
+				const float DistToEnemy = FVector::Dist(MyLocation, NearestEnemy->GetActorLocation());
+
+				if (DistToEnemy > FleeWallOnlyDistance)
+				{
+					// Enemy is far — the flee vector is irrelevant and often points
+					// straight into a wall. Navigate purely by wall avoidance so the
+					// vehicle finds clear space; full throttle when nothing is nearby.
+					VehiclePawn->DoSteering(WallAvoid);
+					VehiclePawn->DoThrottle(FMath::Lerp(1.0f, WhiskerMinThrottleOnWall, WallDanger));
+				}
+				else
+				{
+					// Enemy is close — blend flee direction with wall avoidance.
+					const FVector AwayFromEnemy = (MyLocation - NearestEnemy->GetActorLocation()).GetSafeNormal();
+					const float   HeadingFactor = FMath::Clamp(
+						FVector::DotProduct(VehiclePawn->GetActorForwardVector(), AwayFromEnemy),
+						0.0f, 1.0f);
+					VehiclePawn->DoSteering(FMath::Clamp(
+						FMath::Lerp(ComputeSteering(AwayFromEnemy), WallAvoid, SteerDanger), -1.0f, 1.0f));
+					const float Throttle = FMath::Lerp(MinThrottle, 1.0f, HeadingFactor)
+					                       * FMath::Lerp(1.0f, WhiskerMinThrottleOnWall, WallDanger);
+					VehiclePawn->DoThrottle(Throttle);
+				}
 			}
 			else
 			{
@@ -185,7 +197,7 @@ void ADerbyDemoAIController::Tick(float DeltaTime)
 		else if (SeekTimeElapsed >= SeekTimeLimit)
 			TransitionToState(EAIState::Fleeing);    // chased too long without contact — take a breath
 		else if (ForwardDot < 0.0f)
-			TransitionToState(EAIState::Fleeing);
+			TransitionToState(EAIState::UTurning);
 		break;
 
 	case EAIState::Ramming:
@@ -193,7 +205,7 @@ void ADerbyDemoAIController::Tick(float DeltaTime)
 		if (RamTimeElapsed >= RamTimeLimit)
 			TransitionToState(EAIState::Fleeing);    // been ramming too long — break off
 		else if (ForwardDot < 0.0f)
-			TransitionToState(EAIState::Fleeing);   // overshot — turn around
+			TransitionToState(EAIState::UTurning);   // overshot — turn around
 		else if (DistToTarget >= RamDistance)
 			TransitionToState(EAIState::Seeking);    // target escaped
 		break;
@@ -288,8 +300,22 @@ void ADerbyDemoAIController::TransitionToState(EAIState NewState)
 
 	if (NewState == EAIState::Reversing) ReverseTimeRemaining = ReverseTime;
 	if (NewState == EAIState::Ramming)   RamTimeElapsed        = 0.0f;
-	if (NewState == EAIState::Seeking)   SeekTimeElapsed       = 0.0f;
 	if (NewState == EAIState::Fleeing)   FleeTimeRemaining     = FleeTime;
+
+	// Only reset the seek timer when returning from a genuine break state.
+	// Cycling back from a missed ram or UTurn must keep the clock running so
+	// SeekTimeLimit can fire and force a detour — without this the
+	// Seek → Ram (miss) → UTurn → Seek loop runs indefinitely.
+	if (NewState == EAIState::Seeking)
+	{
+		const bool bFromBreakState = (CurrentState == EAIState::Fleeing      ||
+		                              CurrentState == EAIState::Reversing    ||
+		                              CurrentState == EAIState::StartingRound);
+		if (bFromBreakState)
+		{
+			SeekTimeElapsed = 0.0f;
+		}
+	}
 
 	CurrentState = NewState;
 }

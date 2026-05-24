@@ -76,6 +76,12 @@ protected:
 	UPROPERTY(EditAnywhere, Category="AI|Fleeing", meta=(ClampMin="0.0"))
 	float FleeTime = 3.0f;
 
+	/** Distance (cm) beyond which the fleeing AI ignores the enemy direction and
+	 *  navigates using wall avoidance only. Prevents the flee vector from pointing
+	 *  straight into a wall when the enemy is far away and poses no immediate threat. */
+	UPROPERTY(EditAnywhere, Category="AI|Fleeing", meta=(ClampMin="0.0"))
+	float FleeWallOnlyDistance = 1500.0f;
+
 	/** World-space position of the arena centre; AI drives here at round start before engaging */
 	UPROPERTY(EditAnywhere, Category="AI|Starting Round")
 	FVector ArenaCenter = FVector::ZeroVector;
