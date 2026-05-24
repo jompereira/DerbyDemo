@@ -136,7 +136,7 @@ void ADerbyDemoAIController::Tick(float DeltaTime)
 				const float WallAvoid   = ComputeWallAvoidanceSteering(WallDanger);
 				const float SteerDanger = FMath::Abs(WallAvoid);
 				const float SteerValue = FMath::Clamp(
-					FMath::Lerp(ComputeSteering(AwayFromEnemy), WallAvoid, SteerDanger), -1.0f, 1.0f)
+					FMath::Lerp(ComputeSteering(AwayFromEnemy), WallAvoid, SteerDanger), -1.0f, 1.0f);
 				VehiclePawn->DoSteering(SteerValue);
 				const float Throttle = FMath::Lerp(MinThrottle, 1.0f, HeadingFactor)
 				                       * FMath::Lerp(1.0f, WhiskerMinThrottleOnWall, WallDanger);
