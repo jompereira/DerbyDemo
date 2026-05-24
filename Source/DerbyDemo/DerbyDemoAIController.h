@@ -84,6 +84,66 @@ protected:
 	UPROPERTY(EditAnywhere, Category="AI|Starting Round", meta=(ClampMin="0.0"))
 	float StartingRoundRadius = 500.0f;
 
+	// -------------------------------------------------------------------------
+	// Wall Avoidance — whisker line traces
+	// -------------------------------------------------------------------------
+
+	/** Length (cm) of the center whisker fired straight ahead */
+	UPROPERTY(EditAnywhere, Category="AI|Wall Avoidance", meta=(ClampMin="0.0"))
+	float WhiskerCenterLength = 500.0f;
+
+	/** Length (cm) of each angled side whisker */
+	UPROPERTY(EditAnywhere, Category="AI|Wall Avoidance", meta=(ClampMin="0.0"))
+	float WhiskerSideLength = 350.0f;
+
+	/** Angle (degrees) the inner side whiskers diverge from the vehicle's forward vector */
+	UPROPERTY(EditAnywhere, Category="AI|Wall Avoidance", meta=(ClampMin="0.0", ClampMax="90.0"))
+	float WhiskerSideAngleDeg = 45.0f;
+
+	/** Angle (degrees) of the outer whisker pair — wider for detecting near-perpendicular walls */
+	UPROPERTY(EditAnywhere, Category="AI|Wall Avoidance", meta=(ClampMin="0.0", ClampMax="90.0"))
+	float WhiskerFarSideAngleDeg = 75.0f;
+
+	/** Length (cm) of the outer whiskers — shorter since they cover close-range flanks */
+	UPROPERTY(EditAnywhere, Category="AI|Wall Avoidance", meta=(ClampMin="0.0"))
+	float WhiskerFarSideLength = 200.0f;
+
+	/** Forward offset (cm) from the actor origin to the whisker start point — place near the front bumper */
+	UPROPERTY(EditAnywhere, Category="AI|Wall Avoidance", meta=(ClampMin="0.0"))
+	float WhiskerOriginForwardOffset = 150.0f;
+
+	/** Maximum allowed Z component of a hit surface's normal to be treated as a wall.
+	 *  Walls have near-horizontal normals (Z ≈ 0); terrain and slopes have near-vertical
+	 *  normals (Z ≈ 1). Hits above this threshold are silently ignored.
+	 *  0.7 ≈ 45° — surfaces steeper than that are walls; shallower surfaces are terrain. */
+	UPROPERTY(EditAnywhere, Category="AI|Wall Avoidance", meta=(ClampMin="0.0", ClampMax="1.0"))
+	float WhiskerMaxTerrainNormalZ = 0.7f;
+
+	/** Look-ahead time (seconds) added to all whisker lengths based on current speed.
+	 *  EffectiveLength = BaseLength + Speed * WhiskerLookAheadTime.
+	 *  At 0.3 s and 2000 cm/s the whiskers extend an extra 600 cm beyond their base lengths. */
+	UPROPERTY(EditAnywhere, Category="AI|Wall Avoidance", meta=(ClampMin="0.0"))
+	float WhiskerLookAheadTime = 0.3f;
+
+	/** Avoidance correction multiplier applied to all whisker hits; 0 = disabled, 1 = normal, 2 = aggressive */
+	UPROPERTY(EditAnywhere, Category="AI|Wall Avoidance", meta=(ClampMin="0.0", ClampMax="2.0"))
+	float WhiskerAvoidanceStrength = 1.0f;
+
+	/** Scales wall avoidance during Ramming so the vehicle commits to the target
+	 *  rather than veering off. 0 = full commitment (no avoidance), 1 = normal strength.
+	 *  Keep low — the target geometry usually overrides any wall concern at ram distance. */
+	UPROPERTY(EditAnywhere, Category="AI|Wall Avoidance", meta=(ClampMin="0.0", ClampMax="1.0"))
+	float WhiskerRammingAvoidanceScale = 0.25f;
+
+	/** Throttle multiplier applied when wall danger is at maximum (proximity = 1).
+	 *  0 = full stop, 0.3 = 30 % throttle, 1 = no change. Not applied during Ramming. */
+	UPROPERTY(EditAnywhere, Category="AI|Wall Avoidance", meta=(ClampMin="0.0", ClampMax="1.0"))
+	float WhiskerMinThrottleOnWall = 0.3f;
+
+	/** Draw green/red whisker debug lines in the viewport during PIE for tuning */
+	UPROPERTY(EditAnywhere, Category="AI|Wall Avoidance")
+	bool bDebugDrawWhiskers = false;
+
 private:
 	UPROPERTY()
 	TObjectPtr<ADerbyDemoPawn> VehiclePawn;
@@ -100,5 +160,10 @@ private:
 
 	void TransitionToState(EAIState NewState);
 	float ComputeSteering(FVector ToAim) const;
+	/** Fires five forward whisker traces against WorldStatic.
+	 *  Returns a steering correction in [-1, 1] derived from left/right clearance comparison.
+	 *  OutWallDanger is set to the peak proximity across all hits (0 = clear, 1 = wall at bumper)
+	 *  and is used for throttle reduction independent of steering direction. */
+	float ComputeWallAvoidanceSteering(float& OutWallDanger) const;
 	ADerbyDemoPawn* FindNearestEnemy() const;
 };

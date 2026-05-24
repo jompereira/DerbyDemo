@@ -3,6 +3,8 @@
 #include "DerbyDemo.h"
 #include "ChaosWheeledVehicleMovementComponent.h"
 #include "Kismet/GameplayStatics.h"
+#include "DrawDebugHelpers.h"
+#include "Engine/World.h"
 
 ADerbyDemoAIController::ADerbyDemoAIController()
 {
@@ -93,8 +95,14 @@ void ADerbyDemoAIController::Tick(float DeltaTime)
 			const float   HeadingFactor = FMath::Clamp(
 				FVector::DotProduct(VehiclePawn->GetActorForwardVector(), ToCenterDir),
 				0.0f, 1.0f);
-			VehiclePawn->DoSteering(ComputeSteering(ToCenterDir));
-			VehiclePawn->DoThrottle(FMath::Lerp(MinThrottle, 1.0f, HeadingFactor));
+			float WallDanger = 0.0f;
+			const float WallAvoid   = ComputeWallAvoidanceSteering(WallDanger);
+			const float SteerDanger = FMath::Abs(WallAvoid);
+			VehiclePawn->DoSteering(FMath::Clamp(
+				FMath::Lerp(ComputeSteering(ToCenterDir), WallAvoid, SteerDanger), -1.0f, 1.0f));
+			const float Throttle = FMath::Lerp(MinThrottle, 1.0f, HeadingFactor)
+			                       * FMath::Lerp(1.0f, WhiskerMinThrottleOnWall, WallDanger);
+			VehiclePawn->DoThrottle(Throttle);
 			return;
 		}
 	}
@@ -124,8 +132,15 @@ void ADerbyDemoAIController::Tick(float DeltaTime)
 				const float   HeadingFactor = FMath::Clamp(
 					FVector::DotProduct(VehiclePawn->GetActorForwardVector(), AwayFromEnemy),
 					0.0f, 1.0f);
-				VehiclePawn->DoSteering(ComputeSteering(AwayFromEnemy));
-				VehiclePawn->DoThrottle(FMath::Lerp(MinThrottle, 1.0f, HeadingFactor));
+				float WallDanger = 0.0f;
+				const float WallAvoid   = ComputeWallAvoidanceSteering(WallDanger);
+				const float SteerDanger = FMath::Abs(WallAvoid);
+				const float SteerValue = FMath::Clamp(
+					FMath::Lerp(ComputeSteering(AwayFromEnemy), WallAvoid, SteerDanger), -1.0f, 1.0f)
+				VehiclePawn->DoSteering(SteerValue);
+				const float Throttle = FMath::Lerp(MinThrottle, 1.0f, HeadingFactor)
+				                       * FMath::Lerp(1.0f, WhiskerMinThrottleOnWall, WallDanger);
+				VehiclePawn->DoThrottle(Throttle);
 			}
 			else
 			{
@@ -170,7 +185,7 @@ void ADerbyDemoAIController::Tick(float DeltaTime)
 		else if (SeekTimeElapsed >= SeekTimeLimit)
 			TransitionToState(EAIState::Fleeing);    // chased too long without contact — take a breath
 		else if (ForwardDot < 0.0f)
-			TransitionToState(EAIState::UTurning);
+			TransitionToState(EAIState::Fleeing);
 		break;
 
 	case EAIState::Ramming:
@@ -178,7 +193,7 @@ void ADerbyDemoAIController::Tick(float DeltaTime)
 		if (RamTimeElapsed >= RamTimeLimit)
 			TransitionToState(EAIState::Fleeing);    // been ramming too long — break off
 		else if (ForwardDot < 0.0f)
-			TransitionToState(EAIState::UTurning);   // overshot — turn around
+			TransitionToState(EAIState::Fleeing);   // overshot — turn around
 		else if (DistToTarget >= RamDistance)
 			TransitionToState(EAIState::Seeking);    // target escaped
 		break;
@@ -193,8 +208,12 @@ void ADerbyDemoAIController::Tick(float DeltaTime)
 	}
 
 	// -------------------------------------------------------------------------
-	// Per-state behavior
+	// Per-state behavior — desired steering and throttle stored as locals so
+	// wall avoidance can be blended in one place after the switch.
 	// -------------------------------------------------------------------------
+	float DesiredSteering = 0.0f;
+	float DesiredThrottle = 0.0f;
+
 	switch (CurrentState)
 	{
 	case EAIState::Seeking:
@@ -206,29 +225,51 @@ void ADerbyDemoAIController::Tick(float DeltaTime)
 		const FVector ToAim        = (AimLocation - MyLocation).GetSafeNormal();
 
 		const float HeadingFactor = FMath::Clamp(ForwardDot, 0.0f, 1.0f);
-		VehiclePawn->DoSteering(ComputeSteering(ToAim));
-		VehiclePawn->DoThrottle(FMath::Lerp(MinThrottle, 1.0f, HeadingFactor));
+		DesiredSteering = ComputeSteering(ToAim);
+		DesiredThrottle = FMath::Lerp(MinThrottle, 1.0f, HeadingFactor);
 		break;
 	}
 
 	case EAIState::Ramming:
 		// No prediction — aim at exactly where the target is and commit.
-		VehiclePawn->DoSteering(ComputeSteering(ActualToTarget));
-		VehiclePawn->DoThrottle(1.0f);
+		DesiredSteering = ComputeSteering(ActualToTarget);
+		DesiredThrottle = 1.0f;
 		break;
 
 	case EAIState::UTurning:
 	{
 		// Pick the shorter turn direction based on which side the target is on.
 		const float RightDot = FVector::DotProduct(VehiclePawn->GetActorRightVector(), ActualToTarget);
-		VehiclePawn->DoSteering((RightDot >= 0.0f) ? 1.0f : -1.0f);
-		VehiclePawn->DoThrottle(UTurnThrottle);
+		DesiredSteering = (RightDot >= 0.0f) ? 1.0f : -1.0f;
+		DesiredThrottle = UTurnThrottle;
 		break;
 	}
 
 	default:
 		break;
 	}
+
+	// -------------------------------------------------------------------------
+	// Wall avoidance blend — priority lerp overrides target steering as danger
+	// increases, so opposing target+wall forces can no longer cancel each other.
+	// -------------------------------------------------------------------------
+	const float AvoidScale = (CurrentState == EAIState::Ramming) ? WhiskerRammingAvoidanceScale : 1.0f;
+	float WallDanger = 0.0f;
+	const float WallAvoid   = ComputeWallAvoidanceSteering(WallDanger) * AvoidScale;
+	const float SteerDanger = FMath::Abs(WallAvoid);  // post-scale, drives the lerp
+
+	// Priority lerp: SteerDanger=0 → pure target steering; SteerDanger=1 → pure avoidance.
+	VehiclePawn->DoSteering(
+		FMath::Clamp(FMath::Lerp(DesiredSteering, WallAvoid, SteerDanger), -1.0f, 1.0f));
+
+	// Throttle uses raw WallDanger (peak proximity, pre-scale) so head-on walls
+	// still slow the vehicle even when the clearance bias is near zero.
+	// Ramming is exempt — don't kill the approach speed.
+	if (CurrentState != EAIState::Ramming)
+	{
+		DesiredThrottle *= FMath::Lerp(1.0f, WhiskerMinThrottleOnWall, WallDanger);
+	}
+	VehiclePawn->DoThrottle(DesiredThrottle);
 }
 
 // -----------------------------------------------------------------------------
@@ -261,6 +302,138 @@ float ADerbyDemoAIController::ComputeSteering(FVector ToAim) const
 		FMath::Atan2(RightComp, FwdComp) / FMath::DegreesToRadians(FullLockAngleDeg),
 		-1.0f, 1.0f);
 }
+
+// -----------------------------------------------------------------------------
+
+float ADerbyDemoAIController::ComputeWallAvoidanceSteering(float& OutWallDanger) const
+{
+	OutWallDanger = 0.0f;
+
+	if (!VehiclePawn) return 0.0f;
+
+	UWorld* World = GetWorld();
+	if (!World) return 0.0f;
+
+	// Project forward and right onto the world XY plane so whiskers always fire
+	// horizontally regardless of vehicle pitch.
+	FVector Forward = VehiclePawn->GetActorForwardVector();
+	Forward.Z = 0.0f;
+	if (!Forward.Normalize()) { Forward = FVector::ForwardVector; }
+
+	FVector Right = VehiclePawn->GetActorRightVector();
+	Right.Z = 0.0f;
+	if (!Right.Normalize()) { Right = FVector::RightVector; }
+
+	const FVector Origin = VehiclePawn->GetActorLocation()
+	                       + Forward * WhiskerOriginForwardOffset;
+
+	const float SideRad    = FMath::DegreesToRadians(WhiskerSideAngleDeg);
+	const float CosSide    = FMath::Cos(SideRad);
+	const float SinSide    = FMath::Sin(SideRad);
+
+	const float FarSideRad = FMath::DegreesToRadians(WhiskerFarSideAngleDeg);
+	const float CosFarSide = FMath::Cos(FarSideRad);
+	const float SinFarSide = FMath::Sin(FarSideRad);
+
+	// [0] center  [1] inner-left  [2] inner-right  [3] outer-left  [4] outer-right
+	const FVector Dirs[5] =
+	{
+		Forward,
+		Forward * CosSide    - Right * SinSide,
+		Forward * CosSide    + Right * SinSide,
+		Forward * CosFarSide - Right * SinFarSide,
+		Forward * CosFarSide + Right * SinFarSide,
+	};
+
+	const float SpeedExtension = VehiclePawn->GetVelocity().Size() * WhiskerLookAheadTime;
+	const float Lengths[5] =
+	{
+		WhiskerCenterLength  + SpeedExtension,
+		WhiskerSideLength    + SpeedExtension,
+		WhiskerSideLength    + SpeedExtension,
+		WhiskerFarSideLength + SpeedExtension,
+		WhiskerFarSideLength + SpeedExtension,
+	};
+
+	FCollisionQueryParams QueryParams(TEXT("WhiskerTrace"), false, VehiclePawn);
+
+	// -----------------------------------------------------------------------
+	// Trace all whiskers and record clearance distances.
+	// Clearance = distance to the nearest valid wall hit, or full length if clear.
+	// -----------------------------------------------------------------------
+	float Clearance[5];
+	float MaxProximity = 0.0f;
+
+	for (int32 i = 0; i < 5; ++i)
+	{
+		const FVector End = Origin + Dirs[i] * Lengths[i];
+		FHitResult Hit;
+		bool bValidHit = World->LineTraceSingleByChannel(Hit, Origin, End, ECC_WorldStatic, QueryParams);
+
+		// Reject terrain: walls have near-horizontal normals, landscape is near-vertical.
+		if (bValidHit && FMath::Abs(Hit.ImpactNormal.Z) > WhiskerMaxTerrainNormalZ)
+		{
+			bValidHit = false;
+		}
+
+		if (bDebugDrawWhiskers)
+		{
+			DrawDebugLine(World, Origin, bValidHit ? Hit.ImpactPoint : End,
+				bValidHit ? FColor::Red : FColor::Green,
+				false, -1.0f, 0, 3.0f);
+		}
+
+		Clearance[i] = bValidHit ? Hit.Distance : Lengths[i];
+
+		if (bValidHit)
+		{
+			const float Proximity = 1.0f - (Hit.Distance / Lengths[i]);
+			MaxProximity = FMath::Max(MaxProximity, Proximity);
+		}
+	}
+
+	// OutWallDanger = peak proximity across ALL whiskers, used for throttle
+	// reduction even when there is no clear lateral avoidance direction.
+	OutWallDanger = MaxProximity;
+
+	if (MaxProximity <= 0.0f)
+	{
+		return 0.0f;
+	}
+
+	// -----------------------------------------------------------------------
+	// Clearance comparison — steer toward whichever side has more free space.
+	//
+	// The old normal-based approach failed for near-perpendicular walls because
+	// DotProduct(Right, WallNormal) ≈ 0, producing near-zero correction for the
+	// most dangerous (head-on) approach angle.
+	//
+	// Comparing clearances is robust at every angle: a wall that blocks the left
+	// whiskers and not the right ones always produces a rightward correction,
+	// regardless of what the wall's normal direction happens to be.
+	//
+	// Inner whiskers (±WhiskerSideAngleDeg) are weighted 2× over outer whiskers
+	// because they cover the zone directly ahead where walls are most dangerous.
+	// -----------------------------------------------------------------------
+	const float InnerW = 2.0f;
+	const float OuterW = 1.0f;
+
+	const float LeftClearance     = Clearance[1] * InnerW + Clearance[3] * OuterW;
+	const float RightClearance    = Clearance[2] * InnerW + Clearance[4] * OuterW;
+	const float MaxLeftClearance  = Lengths[1]   * InnerW + Lengths[3]   * OuterW;
+	const float MaxRightClearance = Lengths[2]   * InnerW + Lengths[4]   * OuterW;
+
+	// Normalize to [0, 1] so absolute length differences don't skew the result.
+	const float NormLeft  = LeftClearance  / MaxLeftClearance;
+	const float NormRight = RightClearance / MaxRightClearance;
+
+	// Positive → steer right (more space right), negative → steer left (more space left).
+	// Scale by MaxProximity so the correction is proportional to actual danger.
+	const float ClearanceBias = NormRight - NormLeft;
+	return FMath::Clamp(ClearanceBias * WhiskerAvoidanceStrength * MaxProximity, -1.0f, 1.0f);
+}
+
+// -----------------------------------------------------------------------------
 
 ADerbyDemoPawn* ADerbyDemoAIController::FindNearestEnemy() const
 {
