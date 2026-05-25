@@ -33,11 +33,15 @@ void ADerbyDemoAIController::Tick(float DeltaTime)
 	}
 
 	// -------------------------------------------------------------------------
-	// Stuck detection — suppressed while Ramming (we're actively hitting something),
-	// while already Reversing (avoid re-triggering mid-maneuver), and while Fleeing
-	// (the vehicle intentionally slows during its breakaway turn).
+	// Stuck detection — suppressed while already Reversing (avoid re-triggering
+	// mid-maneuver) and while Ramming (wall braking can drop speed below the
+	// threshold while the car is still actively pressing a target; RamTimeLimit
+	// already handles the "can't make progress" escape → Fleeing).
+	// NOT suppressed during Fleeing: if the car is genuinely wedged in a corner
+	// during its breakaway it must still be able to trigger a rescue reverse.
 	// -------------------------------------------------------------------------
-	if (CurrentState != EAIState::Reversing)
+	if (CurrentState != EAIState::Reversing
+		&& CurrentState != EAIState::Ramming)
 	{
 		if (VehiclePawn->GetVelocity().Size() < StuckSpeedThreshold)
 		{
@@ -96,13 +100,20 @@ void ADerbyDemoAIController::Tick(float DeltaTime)
 				FVector::DotProduct(VehiclePawn->GetActorForwardVector(), ToCenterDir),
 				0.0f, 1.0f);
 			float WallDanger = 0.0f;
-			const float WallAvoid   = ComputeWallAvoidanceSteering(WallDanger);
-			const float SteerDanger = FMath::Abs(WallAvoid);
+			const float WallAvoid    = ComputeWallAvoidanceSteering(WallDanger);
+			// Decouple direction from blend weight: sign gives a decisive ±1 steer
+			// recommendation; WallDanger (proximity) drives how strongly it overrides
+			// the target-seek direction — prevents quadratic scale-down near walls.
+			const float WallSteerDir = (FMath::Abs(WallAvoid) > KINDA_SMALL_NUMBER) ? FMath::Sign(WallAvoid) : 0.0f;
+			const float BlendWeight  = FMath::Clamp(WallDanger * WhiskerAvoidanceStrength, 0.0f, 1.0f);
 			VehiclePawn->DoSteering(FMath::Clamp(
-				FMath::Lerp(ComputeSteering(ToCenterDir), WallAvoid, SteerDanger), -1.0f, 1.0f));
+				FMath::Lerp(ComputeSteering(ToCenterDir), WallSteerDir, BlendWeight), -1.0f, 1.0f));
 			const float Throttle = FMath::Lerp(MinThrottle, 1.0f, HeadingFactor)
 			                       * FMath::Lerp(1.0f, WhiskerMinThrottleOnWall, WallDanger);
 			VehiclePawn->DoThrottle(Throttle);
+			VehiclePawn->GetChaosVehicleMovement()->SetBrakeInput(FMath::Clamp(
+				(WallDanger - WhiskerBrakeDangerThreshold) / FMath::Max(1.0f - WhiskerBrakeDangerThreshold, KINDA_SMALL_NUMBER),
+				0.0f, 1.0f));
 			return;
 		}
 	}
@@ -127,8 +138,9 @@ void ADerbyDemoAIController::Tick(float DeltaTime)
 			if (NearestEnemy)
 			{
 				float WallDanger = 0.0f;
-				const float WallAvoid   = ComputeWallAvoidanceSteering(WallDanger);
-				const float SteerDanger = FMath::Abs(WallAvoid);
+				const float WallAvoid    = ComputeWallAvoidanceSteering(WallDanger);
+				const float WallSteerDir = (FMath::Abs(WallAvoid) > KINDA_SMALL_NUMBER) ? FMath::Sign(WallAvoid) : 0.0f;
+				const float BlendWeight  = FMath::Clamp(WallDanger * WhiskerAvoidanceStrength, 0.0f, 1.0f);
 
 				const float DistToEnemy = FVector::Dist(MyLocation, NearestEnemy->GetActorLocation());
 
@@ -148,11 +160,16 @@ void ADerbyDemoAIController::Tick(float DeltaTime)
 						FVector::DotProduct(VehiclePawn->GetActorForwardVector(), AwayFromEnemy),
 						0.0f, 1.0f);
 					VehiclePawn->DoSteering(FMath::Clamp(
-						FMath::Lerp(ComputeSteering(AwayFromEnemy), WallAvoid, SteerDanger), -1.0f, 1.0f));
+						FMath::Lerp(ComputeSteering(AwayFromEnemy), WallSteerDir, BlendWeight), -1.0f, 1.0f));
 					const float Throttle = FMath::Lerp(MinThrottle, 1.0f, HeadingFactor)
 					                       * FMath::Lerp(1.0f, WhiskerMinThrottleOnWall, WallDanger);
 					VehiclePawn->DoThrottle(Throttle);
 				}
+				// Active braking proportional to wall proximity (same formula as other states).
+				VehiclePawn->GetChaosVehicleMovement()->SetBrakeInput(FMath::Clamp(
+					(WallDanger - WhiskerBrakeDangerThreshold)
+					/ FMath::Max(1.0f - WhiskerBrakeDangerThreshold, KINDA_SMALL_NUMBER),
+					0.0f, 1.0f));
 			}
 			else
 			{
@@ -262,17 +279,22 @@ void ADerbyDemoAIController::Tick(float DeltaTime)
 	}
 
 	// -------------------------------------------------------------------------
-	// Wall avoidance blend — priority lerp overrides target steering as danger
-	// increases, so opposing target+wall forces can no longer cancel each other.
+	// Wall avoidance blend — WallDanger (proximity) drives blend weight so even
+	// small clearance asymmetries produce decisive corrections near walls.
+	// Decoupling the weight from |WallAvoid| prevents the old quadratic scale-down
+	// where a weak ClearanceBias produced a weak WallAvoid → weak SteerDanger →
+	// almost no avoidance even when the wall was at bumper distance.
 	// -------------------------------------------------------------------------
 	const float AvoidScale = (CurrentState == EAIState::Ramming) ? WhiskerRammingAvoidanceScale : 1.0f;
 	float WallDanger = 0.0f;
-	const float WallAvoid   = ComputeWallAvoidanceSteering(WallDanger) * AvoidScale;
-	const float SteerDanger = FMath::Abs(WallAvoid);  // post-scale, drives the lerp
+	const float WallAvoid    = ComputeWallAvoidanceSteering(WallDanger) * AvoidScale;
+	// Direction: decisive ±1 signal from any clearance advantage; 0 when clear.
+	const float WallSteerDir = (FMath::Abs(WallAvoid) > KINDA_SMALL_NUMBER) ? FMath::Sign(WallAvoid) : 0.0f;
+	// Weight: wall proximity × user strength × Ramming scale (0.25 during Ramming to preserve charge).
+	const float BlendWeight  = FMath::Clamp(WallDanger * WhiskerAvoidanceStrength * AvoidScale, 0.0f, 1.0f);
 
-	// Priority lerp: SteerDanger=0 → pure target steering; SteerDanger=1 → pure avoidance.
 	VehiclePawn->DoSteering(
-		FMath::Clamp(FMath::Lerp(DesiredSteering, WallAvoid, SteerDanger), -1.0f, 1.0f));
+		FMath::Clamp(FMath::Lerp(DesiredSteering, WallSteerDir, BlendWeight), -1.0f, 1.0f));
 
 	// Throttle uses raw WallDanger (peak proximity, pre-scale) so head-on walls
 	// still slow the vehicle even when the clearance bias is near zero.
@@ -282,6 +304,13 @@ void ADerbyDemoAIController::Tick(float DeltaTime)
 		DesiredThrottle *= FMath::Lerp(1.0f, WhiskerMinThrottleOnWall, WallDanger);
 	}
 	VehiclePawn->DoThrottle(DesiredThrottle);
+
+	// Apply active braking when danger exceeds the threshold; exempt Ramming so
+	// the vehicle commits fully to its charge without the brakes fighting it.
+	const float WallBrake = (CurrentState != EAIState::Ramming)
+		? FMath::Clamp((WallDanger - WhiskerBrakeDangerThreshold) / FMath::Max(1.0f - WhiskerBrakeDangerThreshold, KINDA_SMALL_NUMBER), 0.0f, 1.0f)
+		: 0.0f;
+	VehiclePawn->GetChaosVehicleMovement()->SetBrakeInput(WallBrake);
 }
 
 // -----------------------------------------------------------------------------

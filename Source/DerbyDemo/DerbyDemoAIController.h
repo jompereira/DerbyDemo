@@ -132,7 +132,7 @@ protected:
 	float WhiskerLookAheadTime = 0.3f;
 
 	/** Avoidance correction multiplier applied to all whisker hits; 0 = disabled, 1 = normal, 2 = aggressive */
-	UPROPERTY(EditAnywhere, Category="AI|Wall Avoidance", meta=(ClampMin="0.0", ClampMax="2.0"))
+	UPROPERTY(EditAnywhere, Category="AI|Wall Avoidance", meta=(ClampMin="0.0", ClampMax="5.0"))
 	float WhiskerAvoidanceStrength = 1.0f;
 
 	/** Scales wall avoidance during Ramming so the vehicle commits to the target
@@ -145,6 +145,12 @@ protected:
 	 *  0 = full stop, 0.3 = 30 % throttle, 1 = no change. Not applied during Ramming. */
 	UPROPERTY(EditAnywhere, Category="AI|Wall Avoidance", meta=(ClampMin="0.0", ClampMax="1.0"))
 	float WhiskerMinThrottleOnWall = 0.3f;
+
+	/** Wall danger (0–1) above which the AI actively brakes in addition to reducing throttle.
+	 *  Brake intensity ramps linearly from 0 at this threshold to 1 at full proximity (WallDanger=1).
+	 *  Not applied during Ramming so the vehicle commits fully to its charge. */
+	UPROPERTY(EditAnywhere, Category="AI|Wall Avoidance", meta=(ClampMin="0.0", ClampMax="1.0"))
+	float WhiskerBrakeDangerThreshold = 0.75f;
 
 	/** Draw green/red whisker debug lines in the viewport during PIE for tuning */
 	UPROPERTY(EditAnywhere, Category="AI|Wall Avoidance")

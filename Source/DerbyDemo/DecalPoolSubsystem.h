@@ -24,8 +24,8 @@ class USceneComponent;
  * Pass the vehicle's skeletal mesh as AttachTo so the decal moves with the car.
  * Omit AttachTo (or pass nullptr) for world-space decals (e.g. ground skids).
  *
- * Rotation tip: decals project along local +X.
- *   For a surface impact use "Make Rot from X" with (-HitNormal) as the X pin.
+ * Rotation tip: use the same rotation you would pass to SpawnDecalAttached.
+ *   For vehicle body impacts: RotateVector(HitNormal, 90°,0,0) → RotationFromXVector.
  */
 UCLASS()
 class DERBYDEMO_API UDecalPoolSubsystem : public UWorldSubsystem
@@ -51,11 +51,17 @@ public:
 	 *
 	 * @param Material      Decal material (must use the Deferred Decal blend mode)
 	 * @param Location      World-space position of the decal (hit point on the surface)
-	 * @param Rotation      Projection direction; use MakeRotFromX(-HitNormal) for surface impacts
+	 * @param Rotation      Projection direction. Decals project along their local +X axis.
+	 *                      The correct rotation depends on the surface being hit — use the
+	 *                      SAME rotation you would pass to SpawnDecalAttached for the same
+	 *                      surface. For vehicle body impacts the working convention (matching
+	 *                      SpawnDecalAttached) is: RotateVector(HitNormal, 90°,0,0) → RotationFromXVector.
 	 * @param Size          Half-extents of the decal box in cm: X = depth, Y = width, Z = height
-	 * @param LifeSpan      Seconds before the decal begins fading out (default 8 s)
-	 * @param FadeDuration  Seconds the decal takes to fade to invisible (default 1.5 s)
-	 * @param AttachTo      If set, the decal actor is attached to this component so it moves
+	 * @param LifeSpan      Seconds before the decal begins fading out (default 8 s).
+	 *                      Pass 0 to disable fade; the decal stays visible until the slot is recycled.
+	 * @param FadeDuration  Seconds the decal takes to fade to invisible (default 1.5 s).
+	 *                      Ignored when LifeSpan is 0.
+	 * @param AttachTo      If set, the decal component is attached to this component so it moves
 	 *                      with it (e.g. pass GetMesh() for vehicle body decals). Pass nullptr
 	 *                      for world-space decals such as ground skid marks.
 	 * @return              The live UDecalComponent, or nullptr if the pool could not be initialised

@@ -107,43 +107,61 @@ UDecalComponent* UDecalPoolSubsystem::SpawnPooledDecal(
 	if (!IsValid(Slot)) return nullptr;
 
 	UDecalComponent* Decal = Slot->GetDecal();
-	// IsValid guards against slots whose UDecalComponent was destroyed by a
-	// previous SetFadeOut (see below for why that was happening).
 	if (!IsValid(Decal)) return nullptr;
 
 	// --- Detach from any previous parent ---
 	// A recycled slot may still be attached to a different vehicle.
 	Slot->DetachFromActor(FDetachmentTransformRules::KeepWorldTransform);
 
-	// --- Place at the world-space hit point, then attach ---
-	// Set world transform first, then attach with KeepWorldTransform so the
-	// engine computes the correct local offset relative to the new parent.
-	// This is the same order SpawnDecalAttached uses internally.
-	Slot->SetActorLocationAndRotation(Location, Rotation);
-	Slot->SetActorHiddenInGame(false);
-
-	if (AttachTo)
-	{
-		Slot->AttachToComponent(AttachTo, FAttachmentTransformRules::KeepWorldTransform);
-	}
-
-	// --- Configure ---
+	// --- Configure material and size while still hidden ---
+	// Setting these before the proxy is (re)built avoids intermediate dirty
+	// proxy recreations and matches the order used in CreateDecalComponent
+	// (the internal helper called by SpawnDecalAttached).
 	Decal->SetDecalMaterial(Material);
 	Decal->DecalSize = Size;
-	// Match SpawnDecalAttached: make size immune to parent component scale.
+	// SetUsingAbsoluteScale must be in place before attachment so the proxy
+	// reads the correct scale when it is constructed. This matches
+	// CreateDecalComponent which also sets it before RegisterComponentWithWorld.
 	Decal->SetUsingAbsoluteScale(true);
 
-	// Restart the visual fade clock from now.
-	//
-	// WARNING: UDecalComponent::SetFadeOut always calls SetLifeSpan(FadeStart+FadeDuration)
-	// internally, which sets a timer that fires LifeSpanCallback → DestroyComponent().
-	// For a pooled actor that must stay alive, this destroys the root UDecalComponent
-	// and breaks the slot permanently.  Immediately call SetLifeSpan(0) to cancel
-	// that timer; the visual fade in the render proxy is unaffected.
-	Decal->SetFadeOut(LifeSpan, FadeDuration, /*bDestroyOwnerAfterFade=*/false);
-	Decal->SetLifeSpan(0.0f); // Cancel the self-destruction timer; pool owns the lifetime.
+	// --- Attach then set world position ---
+	// SpawnDecalAttached (CreateDecalComponent) attaches with KeepRelativeTransform
+	// and then calls SetWorldLocationAndRotation — use the same sequence so the
+	// proxy's transform is computed identically.
+	if (AttachTo)
+	{
+		Decal->AttachToComponent(AttachTo, FAttachmentTransformRules::KeepRelativeTransform);
+		Decal->SetWorldLocationAndRotation(Location, Rotation);
+	}
+	else
+	{
+		Decal->SetWorldLocationAndRotation(Location, Rotation);
+	}
 
-	Decal->MarkRenderStateDirty();
+	// --- Fade / lifetime ---
+	// WARNING: SetFadeOut internally calls SetLifeSpan(FadeStart+FadeDuration),
+	// which schedules LifeSpanCallback → DestroyComponent().  Cancel that timer
+	// immediately with SetLifeSpan(0); the visual fade in the render proxy is
+	// driven by the render-thread parameters set by SetFadeOut and is unaffected.
+	if (FadeDuration > 0.0f)
+	{
+		Decal->SetFadeOut(LifeSpan, FadeDuration, /*bDestroyOwnerAfterFade=*/false);
+		Decal->SetLifeSpan(0.0f);
+	}
+	else
+	{
+		// No fade animation requested — clear any fade params left by a previous
+		// use so the decal renders at full opacity for its full lifetime.
+		Decal->FadeStartDelay = 0.0f;
+		Decal->FadeDuration   = 0.0f;
+		Decal->SetLifeSpan(0.0f);
+	}
+
+	// --- Unhide last ---
+	// SetActorHiddenInGame(false) triggers the final MarkRenderStateDirty so
+	// the proxy is rebuilt exactly once, after all configuration is in place,
+	// with DrawInGame=true.
+	Slot->SetActorHiddenInGame(false);
 
 	return Decal;
 }
