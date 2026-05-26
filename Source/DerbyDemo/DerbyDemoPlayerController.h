@@ -9,6 +9,7 @@
 class UInputMappingContext;
 class ADerbyDemoPawn;
 class UDerbyDemoUI;
+class UDerbyCountdownUI;
 
 /**
  *  Vehicle Player Controller class
@@ -65,6 +66,14 @@ protected:
 	/** Pointer to the UI widget */
 	UPROPERTY()
 	TObjectPtr<UDerbyDemoUI> VehicleUI;
+
+	/** Pre-round countdown widget class to spawn */
+	UPROPERTY(EditAnywhere, Category="Vehicle|UI")
+	TSubclassOf<UDerbyCountdownUI> CountdownUIClass;
+
+	/** Pointer to the countdown widget */
+	UPROPERTY()
+	TObjectPtr<UDerbyCountdownUI> CountdownUI;
 		
 protected:
 

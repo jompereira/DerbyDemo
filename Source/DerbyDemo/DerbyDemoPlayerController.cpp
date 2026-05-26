@@ -5,6 +5,7 @@
 #include "DerbyDemoPawn.h"
 #include "DerbyDemoGameState.h"
 #include "DerbyDemoUI.h"
+#include "DerbyCountdownUI.h"
 #include "EnhancedInputSubsystems.h"
 #include "ChaosWheeledVehicleMovementComponent.h"
 #include "Blueprint/UserWidget.h"
@@ -58,6 +59,22 @@ void ADerbyDemoPlayerController::BeginPlay()
 
 			UE_LOG(LogDerbyDemo, Error, TEXT("Could not spawn vehicle UI widget."));
 
+		}
+
+		// spawn the pre-round countdown widget (sits above the vehicle HUD)
+		if (CountdownUIClass)
+		{
+			CountdownUI = CreateWidget<UDerbyCountdownUI>(this, CountdownUIClass);
+
+			if (CountdownUI)
+			{
+				CountdownUI->AddToViewport(1);
+
+			} else {
+
+				UE_LOG(LogDerbyDemo, Error, TEXT("Could not spawn countdown UI widget."));
+
+			}
 		}
 	}
 }

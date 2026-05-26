@@ -26,6 +26,7 @@ void ADerbyGameMode::CountdownTick()
 	}
 
 	GS->CountdownSecondsRemaining = FMath::Max(0, GS->CountdownSecondsRemaining - 1);
+	GS->CountdownTickDelegate.Broadcast(GS->CountdownSecondsRemaining);
 
 	if (GS->CountdownSecondsRemaining <= 0)
 	{

@@ -7,6 +7,7 @@
 #include "DerbyDemoGameState.generated.h"
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FStartRoundDelegate);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FCountdownTickDelegate, int32, SecondsRemaining);
 
 UENUM(BlueprintType)
 enum class ERoundPhase : uint8
@@ -32,6 +33,10 @@ public:
 	/** Seconds remaining before the round starts. Counts down from StartRoundSeconds to 0. */
 	UPROPERTY(BlueprintReadOnly, Category = "Derby|Round")
 	int32 CountdownSecondsRemaining = 0;
+
+	/** Broadcast every second during the countdown with the new remaining value. */
+	UPROPERTY(BlueprintAssignable, Category = "Derby|Round")
+	FCountdownTickDelegate CountdownTickDelegate;
 
 	/** Broadcast when the round begins. Bind from Blueprint or C++ (AddDynamic). */
 	UPROPERTY(BlueprintAssignable, Category = "Derby|Round")
