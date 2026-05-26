@@ -115,6 +115,45 @@ ATimeTrialPlayerController          ← parallel controller (NOT a subclass of a
 - `OnImpact(FVector ImpactLocation, FVector ImpactNormal, float ImpulseMagnitude)` is a `BlueprintImplementableEvent`; Blueprint implements the deformation logic and calls `ApplyDamageAtLocation` on `UMorphTargetsComponent` passing all three values
 - **Physics asset accuracy matters:** the line trace refines within whatever physics bodies exist; tighter convex bodies per panel (front bumper, rear, sides) in the Physics Asset Editor improve contact point accuracy further
 
+### AI System
+
+`ADerbyDemoAIController` is a pure C++ `AAIController` subclass (no Behavior Tree) that drives any `ADerbyDemoPawn`. It uses a hand-written state machine.
+
+**States (`EAIState`):**
+- `StartingRound` — drives toward `ArenaCenter` before engaging; transitions to Seeking on arrival
+- `Seeking` — finds nearest enemy, leads aim by a velocity-based prediction time; transitions to Ramming when within `RamDistance`, UTurning when target is behind, or Fleeing when `SeekTimeLimit` expires
+- `Ramming` — full-throttle charge at exact target position; transitions to Fleeing after `RamTimeLimit`, UTurning if overshot, or Seeking if target escaped
+- `UTurning` — applies full steering lock toward whichever side the target is on, low throttle; returns to Seeking when facing forward
+- `Reversing` — brakes/reverses for `ReverseTime` seconds; triggered by stuck detection; always returns to Seeking
+- `Fleeing` — drives away from nearest enemy for `FleeTime` seconds; blends flee direction with wall avoidance; ignores enemy direction when `DistToEnemy > FleeWallOnlyDistance`
+
+**Stuck detection:** accumulates `TimeAtLowSpeed` when `speed < StuckSpeedThreshold`; triggers Reversing at `StuckTime`. Suppressed while Reversing or Fleeing.
+
+**Wall avoidance (5 whisker traces against `ECC_WorldStatic`):**
+- Center, inner-left/right (±`WhiskerSideAngleDeg`), outer-left/right (±`WhiskerFarSideAngleDeg`)
+- Whisker lengths extend dynamically: `BaseLength + Speed × WhiskerLookAheadTime`
+- Terrain rejected by `ImpactNormal.Z > WhiskerMaxTerrainNormalZ` (0.7 default = 45°)
+- Steering correction uses a clearance-comparison approach (weighted inner 2×, outer 1×) — more robust than dot-product against perpendicular walls
+- `OutWallDanger` (0–1 peak proximity) drives throttle reduction independently of steering; Ramming state is exempt from throttle reduction
+- During Ramming, avoidance steering is scaled by `WhiskerRammingAvoidanceScale` (default 0.25) so the vehicle commits to the charge
+- `bDebugDrawWhiskers` draws green/red lines in PIE for tuning
+- `CurrentState` is `VisibleInstanceOnly` so it shows in the Details panel during PIE
+
+**SeekTimeElapsed** resets only when returning from a genuine break state (Fleeing, Reversing, StartingRound) — not from UTurn/Ramming — so endless pursuit loops eventually force a detour.
+
+**Enemy finding:** `FindNearestEnemy()` scans all `ADerbyDemoPawn` actors in the world and returns the closest one that isn't self.
+
+### Decal Pool Subsystem
+
+`UDecalPoolSubsystem` is a `UWorldSubsystem` that maintains a fixed-size ring-buffer pool of `ADecalActor`s. Auto-created for every world — no level placement needed.
+
+- Pool is initialized on `Initialize()` (not lazily); size is `PoolSize` (default 32); `bDestroyOwnerAfterFade = false` is set on all slots so actors survive fade-out
+- **Blueprint usage:** `Get World Subsystem (DecalPoolSubsystem)` → `SpawnPooledDecal(Material, Location, Rotation, Size, LifeSpan, FadeDuration, AttachTo)`
+- Pass the vehicle's skeletal mesh component as `AttachTo` for body decals (moves with the car); pass `nullptr` for world-space ground decals
+- Rotation tip: pass the **same rotation** you would give `SpawnDecalAttached` for the same surface. For vehicle body impacts the confirmed working convention is `RotateVector(HitNormal, 90°,0,0)` → `RotationFromXVector`. Do **not** use `NegateVector(HitNormal)` — it projects in the wrong direction and produces invisible decals
+- Recycling: when all 32 slots are in use the oldest one is silently repurposed (detached from its previous parent first)
+- **Critical implementation note:** `UDecalComponent::SetFadeOut` internally calls `SetLifeSpan(FadeStart+FadeDuration)`, which schedules `DestroyComponent()`. The pool immediately cancels this with `SetLifeSpan(0.0f)` after every `SetFadeOut` call — the visual fade in the render proxy is unaffected
+
 ### Logging
 
 Use `LogDerbyDemo` (declared in `DerbyDemo.h`) for all project log output:
@@ -131,6 +170,9 @@ Source/DerbyDemo/
 ├── DerbyDemoPlayerController.h/cpp ← input & UI
 ├── DerbyDemoUI.h/cpp               ← base HUD widget
 ├── DerbyDemoWheelFront/Rear.h/cpp  ← base wheels
+├── DerbyDemoAIController.h/cpp     ← AI state machine (Seeking/Ramming/Fleeing/…)
+├── DecalPoolSubsystem.h/cpp        ← world subsystem; ring-buffer decal pool
+├── MorphTargetsComponent.h/cpp     ← deformation component
 ├── SportsCar/                      ← sports car + its wheels
 ├── OffroadCar/                     ← offroad car + its wheels
 └── Variant_TimeTrial/              ← time trial game mode, controller, gates, UI

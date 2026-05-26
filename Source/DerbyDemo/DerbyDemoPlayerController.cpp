@@ -3,6 +3,7 @@
 
 #include "DerbyDemoPlayerController.h"
 #include "DerbyDemoPawn.h"
+#include "DerbyDemoGameState.h"
 #include "DerbyDemoUI.h"
 #include "EnhancedInputSubsystems.h"
 #include "ChaosWheeledVehicleMovementComponent.h"
@@ -15,9 +16,15 @@
 void ADerbyDemoPlayerController::BeginPlay()
 {
 	Super::BeginPlay();
-	
+
 	// ensure we're attached to the vehicle pawn so that World Partition streaming works correctly
 	bAttachToPawn = true;
+
+	// Subscribe to the round-start signal so we can unlock the pawn when it fires.
+	if (ADerbyDemoGameState* GS = GetWorld()->GetGameState<ADerbyDemoGameState>())
+	{
+		GS->StartRoundDelegate.AddDynamic(this, &ADerbyDemoPlayerController::OnRoundStarted);
+	}
 
 	// only spawn UI on local player controllers
 	if (IsLocalPlayerController())
@@ -99,6 +106,33 @@ void ADerbyDemoPlayerController::OnPossess(APawn* InPawn)
 
 	VehiclePawn = CastChecked<ADerbyDemoPawn>(InPawn);
 	VehiclePawn->OnDestroyed.AddDynamic(this, &ADerbyDemoPlayerController::OnPawnDestroyed);
+
+	// Lock input on the newly possessed pawn if the round hasn't started yet.
+	// This also covers respawns: a replacement pawn starts locked if still in PreRound.
+	if (ADerbyDemoGameState* GS = GetWorld()->GetGameState<ADerbyDemoGameState>())
+	{
+		if (GS->RoundPhase == ERoundPhase::PreRound)
+		{
+			InPawn->DisableInput(this);
+		}
+	}
+}
+
+void ADerbyDemoPlayerController::EndPlay(EEndPlayReason::Type EndPlayReason)
+{
+	if (ADerbyDemoGameState* GS = GetWorld() ? GetWorld()->GetGameState<ADerbyDemoGameState>() : nullptr)
+	{
+		GS->StartRoundDelegate.RemoveDynamic(this, &ADerbyDemoPlayerController::OnRoundStarted);
+	}
+	Super::EndPlay(EndPlayReason);
+}
+
+void ADerbyDemoPlayerController::OnRoundStarted()
+{
+	if (APawn* P = GetPawn())
+	{
+		P->EnableInput(this);
+	}
 }
 
 void ADerbyDemoPlayerController::AcknowledgePossession(APawn* P)

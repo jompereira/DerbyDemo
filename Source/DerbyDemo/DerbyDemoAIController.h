@@ -9,6 +9,7 @@ class ADerbyDemoPawn;
 UENUM(BlueprintType)
 enum class EAIState : uint8
 {
+	PreStartRound UMETA(DisplayName="Pre Start Round"),
 	StartingRound UMETA(DisplayName="Starting Round"),
 	Seeking       UMETA(DisplayName="Seeking"),
 	Ramming       UMETA(DisplayName="Ramming"),
@@ -162,7 +163,7 @@ private:
 
 	/** Current state — visible in the Details panel during PIE for easy debugging */
 	UPROPERTY(VisibleInstanceOnly, Category="AI|Debug")
-	EAIState CurrentState = EAIState::StartingRound;
+	EAIState CurrentState = EAIState::PreStartRound;
 
 	float TimeAtLowSpeed = 0.0f;
 	float ReverseTimeRemaining = 0.0f;
@@ -178,4 +179,11 @@ private:
 	 *  and is used for throttle reduction independent of steering direction. */
 	float ComputeWallAvoidanceSteering(float& OutWallDanger) const;
 	ADerbyDemoPawn* FindNearestEnemy() const;
+
+	/** Bound to ADerbyDemoGameState::StartRoundDelegate. Transitions from PreStartRound to StartingRound. */
+	UFUNCTION()
+	void OnRoundStarted();
+
+protected:
+	virtual void BeginPlay() override;
 };

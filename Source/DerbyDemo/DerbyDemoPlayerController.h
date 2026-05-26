@@ -68,8 +68,11 @@ protected:
 		
 protected:
 
-	/** Gameplay initialization */
+	/** Gameplay initialization — subscribes to round-start delegate */
 	virtual void BeginPlay() override;
+
+	/** Cleanup — unsubscribes from round-start delegate */
+	virtual void EndPlay(EEndPlayReason::Type EndPlayReason) override;
 
 	/** Input setup */
 	virtual void SetupInputComponent() override;
@@ -90,6 +93,10 @@ protected:
 	/** Handles pawn destruction and respawning */
 	UFUNCTION()
 	void OnPawnDestroyed(AActor* DestroyedPawn);
+
+	/** Bound to ADerbyDemoGameState::StartRoundDelegate — enables input on the possessed pawn */
+	UFUNCTION()
+	void OnRoundStarted();
 
 	/** Returns true if the player should use UMG touch controls */
 	bool ShouldUseTouchControls() const;

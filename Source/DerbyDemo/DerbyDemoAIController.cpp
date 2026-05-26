@@ -1,5 +1,6 @@
 #include "DerbyDemoAIController.h"
 #include "DerbyDemoPawn.h"
+#include "DerbyDemoGameState.h"
 #include "DerbyDemo.h"
 #include "ChaosWheeledVehicleMovementComponent.h"
 #include "Kismet/GameplayStatics.h"
@@ -15,12 +16,38 @@ void ADerbyDemoAIController::OnPossess(APawn* InPawn)
 {
 	Super::OnPossess(InPawn);
 	VehiclePawn = Cast<ADerbyDemoPawn>(InPawn);
+
+	if (ADerbyDemoGameState* GS = GetWorld()->GetGameState<ADerbyDemoGameState>())
+	{
+		GS->StartRoundDelegate.AddDynamic(this, &ADerbyDemoAIController::OnRoundStarted);
+
+		// Late-join: round already running — skip the pre-start hold immediately.
+		if (GS->RoundPhase == ERoundPhase::InProgress && CurrentState == EAIState::PreStartRound)
+		{
+			TransitionToState(EAIState::StartingRound);
+		}
+	}
 }
 
 void ADerbyDemoAIController::OnUnPossess()
 {
-	Super::OnUnPossess();
+	if (UWorld* World = GetWorld())
+	{
+		if (ADerbyDemoGameState* GS = World->GetGameState<ADerbyDemoGameState>())
+		{
+			GS->StartRoundDelegate.RemoveDynamic(this, &ADerbyDemoAIController::OnRoundStarted);
+		}
+	}
 	VehiclePawn = nullptr;
+	Super::OnUnPossess();
+}
+
+void ADerbyDemoAIController::OnRoundStarted()
+{
+	if (CurrentState == EAIState::PreStartRound)
+	{
+		TransitionToState(EAIState::StartingRound);
+	}
 }
 
 void ADerbyDemoAIController::Tick(float DeltaTime)
@@ -41,7 +68,8 @@ void ADerbyDemoAIController::Tick(float DeltaTime)
 	// during its breakaway it must still be able to trigger a rescue reverse.
 	// -------------------------------------------------------------------------
 	if (CurrentState != EAIState::Reversing
-		&& CurrentState != EAIState::Ramming)
+		&& CurrentState != EAIState::Ramming
+		&& CurrentState != EAIState::PreStartRound)
 	{
 		if (VehiclePawn->GetVelocity().Size() < StuckSpeedThreshold)
 		{
@@ -76,6 +104,12 @@ void ADerbyDemoAIController::Tick(float DeltaTime)
 			TransitionToState(EAIState::Seeking);
 		}
 		return;
+	}
+	
+	if (CurrentState == EAIState::PreStartRound)
+	{
+		VehiclePawn->DoThrottle(0.f);
+		VehiclePawn->DoBrake(1.f);
 	}
 
 	// -------------------------------------------------------------------------
@@ -516,4 +550,10 @@ ADerbyDemoPawn* ADerbyDemoAIController::FindNearestEnemy() const
 	}
 
 	return Nearest;
+}
+
+void ADerbyDemoAIController::BeginPlay()
+{
+	Super::BeginPlay();
+	
 }

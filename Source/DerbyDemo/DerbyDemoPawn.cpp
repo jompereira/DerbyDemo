@@ -112,6 +112,7 @@ void ADerbyDemoPawn::BeginPlay()
 	{
 		GC->SetCollisionResponseToChannel(ECC_Vehicle, ECR_Ignore);
 	}
+
 }
 
 void ADerbyDemoPawn::EndPlay(EEndPlayReason::Type EndPlayReason)
