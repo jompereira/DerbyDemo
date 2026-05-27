@@ -121,7 +121,7 @@ void ADerbyDemoAIController::Tick(float DeltaTime)
 		const FVector ToCenter    = ArenaCenter - MyLocation;
 		const float   DistToCenter = ToCenter.Size();
 
-		if (DistToCenter <= StartingRoundRadius)
+		if (DistToCenter <= CachedStartingRoundRadius)
 		{
 			// Arrived — begin engaging enemies.
 			TransitionToState(EAIState::Seeking);
@@ -555,5 +555,7 @@ ADerbyDemoPawn* ADerbyDemoAIController::FindNearestEnemy() const
 void ADerbyDemoAIController::BeginPlay()
 {
 	Super::BeginPlay();
+	
+	CachedStartingRoundRadius = FMath::Lerp(StartingRoundRadius.X, StartingRoundRadius.Y, FMath::FRandRange(0.f, 1.f));
 	
 }

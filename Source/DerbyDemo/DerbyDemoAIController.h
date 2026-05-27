@@ -89,7 +89,7 @@ protected:
 
 	/** Radius (cm) within which the AI considers itself to have reached the arena centre */
 	UPROPERTY(EditAnywhere, Category="AI|Starting Round", meta=(ClampMin="0.0"))
-	float StartingRoundRadius = 500.0f;
+	FVector2D StartingRoundRadius = FVector2D(500.f, 1000.f);
 
 	// -------------------------------------------------------------------------
 	// Wall Avoidance — whisker line traces
@@ -170,6 +170,7 @@ private:
 	float RamTimeElapsed = 0.0f;
 	float SeekTimeElapsed = 0.0f;
 	float FleeTimeRemaining = 0.0f;
+	float CachedStartingRoundRadius = 0.f;
 
 	void TransitionToState(EAIState NewState);
 	float ComputeSteering(FVector ToAim) const;
