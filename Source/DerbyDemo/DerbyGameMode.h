@@ -6,6 +6,8 @@
 #include "GameFramework/GameModeBase.h"
 #include "DerbyGameMode.generated.h"
 
+class ADerbyDemoPawn;
+
 /**
  * Base game mode for derby maps.
  * Owns the StartRound() decision; state and the delegate live in ADerbyDemoGameState.
@@ -36,4 +38,28 @@ private:
 	void CountdownTick();
 
 	FTimerHandle CountdownTickHandle;
+
+	// -------------------------------------------------------------------------
+	// Elimination tracking — last car standing ends the round.
+	// -------------------------------------------------------------------------
+
+	/** All vehicles that were alive at round start; shrinks as they are eliminated. */
+	UPROPERTY()
+	TArray<TObjectPtr<ADerbyDemoPawn>> TrackedVehicles;
+
+public:
+	/** Read-only access to the live vehicle list — use this instead of GetAllActorsOfClass. */
+	const TArray<TObjectPtr<ADerbyDemoPawn>>& GetTrackedVehicles() const { return TrackedVehicles; }
+
+private:
+
+	/** Finds all ADerbyDemoPawn actors in the level and subscribes to their elimination delegates. */
+	void RegisterVehicles();
+
+	/** Bound to each tracked vehicle's OnVehicleEliminated delegate. */
+	UFUNCTION()
+	void OnVehicleEliminated(ADerbyDemoPawn* Eliminated);
+
+	/** Transitions the game state to PostRound and broadcasts the result. */
+	void EndRound(ADerbyDemoPawn* Winner);
 };

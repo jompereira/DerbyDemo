@@ -13,11 +13,13 @@ class UInputAction;
 class UChaosWheeledVehicleMovementComponent;
 struct FInputActionValue;
 
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FVehicleEliminatedDelegate, ADerbyDemoPawn*, EliminatedVehicle);
+
 /**
  *  Vehicle Pawn class
  *  Handles common functionality for all vehicle types,
  *  including input handling and camera management.
- *  
+ *
  *  Specific vehicle configurations are handled in subclasses.
  */
 UCLASS(abstract)
@@ -204,6 +206,29 @@ public:
 	void DoResetVehicle();
 	void DoCameraShake(const FVector& NormalImpulse);
 
+	// -------------------------------------------------------------------------
+	// Derby health & elimination
+	// -------------------------------------------------------------------------
+
+	/** True once health reaches zero. Controllers and AI observe this. */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Derby|Health")
+	bool bIsEliminated = false;
+
+	/**
+	 * Reduces health by Amount. Triggers elimination when health hits zero:
+	 * stops the vehicle, fires OnEliminated (Blueprint), and broadcasts OnVehicleEliminated.
+	 */
+	UFUNCTION(BlueprintCallable, Category="Derby|Health")
+	void TakeDerbyDamage(float Amount);
+
+	/** Returns CurrentHealth / MaxHealth clamped to [0, 1]. */
+	UFUNCTION(BlueprintPure, Category="Derby|Health")
+	float GetHealthRatio() const;
+
+	/** Broadcast when this vehicle's health reaches zero. */
+	UPROPERTY(BlueprintAssignable, Category="Derby|Health")
+	FVehicleEliminatedDelegate OnVehicleEliminated;
+
 protected:
 
 	/** Called when the brake lights are turned on or off */
@@ -223,6 +248,18 @@ protected:
 	/** Prefix used to identify panel anchor sockets, e.g. "Damage_" */
 	UPROPERTY(EditAnywhere, Category="Damage")
 	FString DamageSocketPrefix = TEXT("MT_");
+
+	/** Maximum health before elimination. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Derby|Health", meta=(ClampMin="1.0"))
+	float MaxHealth = 100.f;
+
+	/** Current health. Read-only; reduced by TakeDerbyDamage(). */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Derby|Health")
+	float CurrentHealth = 100.f;
+
+	/** Called when the vehicle is eliminated. Implement in Blueprint for VFX / SFX. */
+	UFUNCTION(BlueprintImplementableEvent, Category="Derby|Health")
+	void OnEliminated();
 
 	/** Checks if the car is flipped upside down and automatically resets it */
 	UFUNCTION()

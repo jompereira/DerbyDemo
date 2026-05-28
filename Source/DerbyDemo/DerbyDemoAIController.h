@@ -16,6 +16,7 @@ enum class EAIState : uint8
 	Fleeing       UMETA(DisplayName="Fleeing"),
 	UTurning      UMETA(DisplayName="U-Turning"),
 	Reversing     UMETA(DisplayName="Reversing"),
+	Eliminated    UMETA(DisplayName="Eliminated"),
 };
 
 UCLASS()
@@ -156,6 +157,10 @@ protected:
 	/** Draw green/red whisker debug lines in the viewport during PIE for tuning */
 	UPROPERTY(EditAnywhere, Category="AI|Wall Avoidance")
 	bool bDebugDrawWhiskers = false;
+	
+	/** Draw green/red whisker debug lines in the viewport during PIE for tuning */
+	UPROPERTY(EditAnywhere, Category="AI|States")
+	bool bDebugStateTransition = false;
 
 private:
 	UPROPERTY()
@@ -184,6 +189,14 @@ private:
 	/** Bound to ADerbyDemoGameState::StartRoundDelegate. Transitions from PreStartRound to StartingRound. */
 	UFUNCTION()
 	void OnRoundStarted();
+
+	/** Bound to VehiclePawn::OnVehicleEliminated. Transitions to Eliminated and zeroes all inputs. */
+	UFUNCTION()
+	void OnPawnEliminated(ADerbyDemoPawn* EliminatedPawn);
+
+	/** Bound to ADerbyDemoGameState::RoundEndDelegate. Stops all remaining vehicles. */
+	UFUNCTION()
+	void OnRoundEnded(AActor* Winner);
 
 protected:
 	virtual void BeginPlay() override;

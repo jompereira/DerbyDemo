@@ -104,6 +104,9 @@ void ADerbyDemoPawn::BeginPlay()
 {
 	Super::BeginPlay();
 
+	// Initialise health
+	CurrentHealth = MaxHealth;
+
 	// set up the flipped check timer
 	GetWorld()->GetTimerManager().SetTimer(FlipCheckTimer, this, &ADerbyDemoPawn::FlippedCheck, FlipCheckTime, true);
 
@@ -288,6 +291,43 @@ void ADerbyDemoPawn::DoResetVehicle()
 }
 
 
+
+void ADerbyDemoPawn::TakeDerbyDamage(float Amount)
+{
+	if (bIsEliminated || Amount <= 0.f)
+	{
+		return;
+	}
+
+	CurrentHealth = FMath::Max(0.f, CurrentHealth - Amount);
+
+	if (CurrentHealth <= 0.f)
+	{
+		bIsEliminated = true;
+
+		// Stop the vehicle immediately — brake hard and hold the handbrake.
+		ChaosVehicleMovement->SetThrottleInput(0.f);
+		ChaosVehicleMovement->SetBrakeInput(0.f);
+		ChaosVehicleMovement->SetHandbrakeInput(true);
+		ChaosVehicleMovement->SetSteeringInput(0.f);
+
+		// Cancel the flip-check timer so an eliminated wreck doesn't self-reset.
+		GetWorld()->GetTimerManager().ClearTimer(FlipCheckTimer);
+
+		// Blueprint hook for VFX / SFX (explosion, smoke, etc.).
+		OnEliminated();
+
+		// Notify game mode and controllers.
+		OnVehicleEliminated.Broadcast(this);
+
+		UE_LOG(LogDerbyDemo, Log, TEXT("%s eliminated."), *GetNameSafe(this));
+	}
+}
+
+float ADerbyDemoPawn::GetHealthRatio() const
+{
+	return MaxHealth > 0.f ? FMath::Clamp(CurrentHealth / MaxHealth, 0.f, 1.f) : 0.f;
+}
 
 void ADerbyDemoPawn::DoCameraShake(const FVector& NormalImpulse)
 {

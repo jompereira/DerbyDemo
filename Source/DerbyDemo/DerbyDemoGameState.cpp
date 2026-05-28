@@ -7,3 +7,9 @@ void ADerbyDemoGameState::BeginRound()
 	RoundPhase = ERoundPhase::InProgress;
 	StartRoundDelegate.Broadcast();
 }
+
+void ADerbyDemoGameState::EndRound(AActor* Winner)
+{
+	RoundPhase = ERoundPhase::PostRound;
+	RoundEndDelegate.Broadcast(Winner);
+}

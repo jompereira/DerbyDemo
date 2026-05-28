@@ -10,6 +10,7 @@ class UInputMappingContext;
 class ADerbyDemoPawn;
 class UDerbyDemoUI;
 class UDerbyCountdownUI;
+class UDerbyResultsUI;
 
 /**
  *  Vehicle Player Controller class
@@ -74,6 +75,14 @@ protected:
 	/** Pointer to the countdown widget */
 	UPROPERTY()
 	TObjectPtr<UDerbyCountdownUI> CountdownUI;
+
+	/** Results widget class (shown on elimination and when the round ends). */
+	UPROPERTY(EditAnywhere, Category="Vehicle|UI")
+	TSubclassOf<UDerbyResultsUI> ResultsUIClass;
+
+	/** Pointer to the results widget. */
+	UPROPERTY()
+	TObjectPtr<UDerbyResultsUI> ResultsUI;
 		
 protected:
 
@@ -106,6 +115,14 @@ protected:
 	/** Bound to ADerbyDemoGameState::StartRoundDelegate — enables input on the possessed pawn */
 	UFUNCTION()
 	void OnRoundStarted();
+
+	/** Bound to the possessed pawn's OnVehicleEliminated — disables input, shows results widget */
+	UFUNCTION()
+	void OnPawnEliminatedDelegate(ADerbyDemoPawn* EliminatedPawn);
+
+	/** Bound to ADerbyDemoGameState::RoundEndDelegate — shows win/loss result */
+	UFUNCTION()
+	void OnRoundEnded(AActor* Winner);
 
 	/** Returns true if the player should use UMG touch controls */
 	bool ShouldUseTouchControls() const;

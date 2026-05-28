@@ -1,6 +1,7 @@
 #include "DerbyDemoAIController.h"
 #include "DerbyDemoPawn.h"
 #include "DerbyDemoGameState.h"
+#include "DerbyGameMode.h"
 #include "DerbyDemo.h"
 #include "ChaosWheeledVehicleMovementComponent.h"
 #include "Kismet/GameplayStatics.h"
@@ -17,9 +18,15 @@ void ADerbyDemoAIController::OnPossess(APawn* InPawn)
 	Super::OnPossess(InPawn);
 	VehiclePawn = Cast<ADerbyDemoPawn>(InPawn);
 
+	if (VehiclePawn)
+	{
+		VehiclePawn->OnVehicleEliminated.AddDynamic(this, &ADerbyDemoAIController::OnPawnEliminated);
+	}
+
 	if (ADerbyDemoGameState* GS = GetWorld()->GetGameState<ADerbyDemoGameState>())
 	{
 		GS->StartRoundDelegate.AddDynamic(this, &ADerbyDemoAIController::OnRoundStarted);
+		GS->RoundEndDelegate.AddDynamic(this, &ADerbyDemoAIController::OnRoundEnded);
 
 		// Late-join: round already running — skip the pre-start hold immediately.
 		if (GS->RoundPhase == ERoundPhase::InProgress && CurrentState == EAIState::PreStartRound)
@@ -31,11 +38,17 @@ void ADerbyDemoAIController::OnPossess(APawn* InPawn)
 
 void ADerbyDemoAIController::OnUnPossess()
 {
+	if (VehiclePawn)
+	{
+		VehiclePawn->OnVehicleEliminated.RemoveDynamic(this, &ADerbyDemoAIController::OnPawnEliminated);
+	}
+
 	if (UWorld* World = GetWorld())
 	{
 		if (ADerbyDemoGameState* GS = World->GetGameState<ADerbyDemoGameState>())
 		{
 			GS->StartRoundDelegate.RemoveDynamic(this, &ADerbyDemoAIController::OnRoundStarted);
+			GS->RoundEndDelegate.RemoveDynamic(this, &ADerbyDemoAIController::OnRoundEnded);
 		}
 	}
 	VehiclePawn = nullptr;
@@ -56,6 +69,20 @@ void ADerbyDemoAIController::Tick(float DeltaTime)
 
 	if (!HasAuthority() || !VehiclePawn)
 	{
+		return;
+	}
+
+	// Eliminated vehicles: hold stationary with handbrake, no throttle or brake.
+	// brake=0 is critical — Chaos auto-reverse (bReverseAsBrake) shifts to reverse
+	// gear when SetBrakeInput(1) is maintained at zero speed, causing indefinite
+	// backward movement. Handbrake alone holds the wreck without that side-effect.
+	if (CurrentState == EAIState::Eliminated)
+	{
+		UChaosWheeledVehicleMovementComponent* MoveComp = VehiclePawn->GetChaosVehicleMovement();
+		MoveComp->SetThrottleInput(0.f);
+		MoveComp->SetBrakeInput(0.f);
+		MoveComp->SetSteeringInput(0.f);
+		MoveComp->SetHandbrakeInput(true);
 		return;
 	}
 
@@ -356,10 +383,13 @@ void ADerbyDemoAIController::TransitionToState(EAIState NewState)
 		return;
 	}
 
-	UE_LOG(LogDerbyDemo, Log, TEXT("AI %s: %s -> %s"),
-		*GetName(),
-		*UEnum::GetValueAsString(CurrentState),
-		*UEnum::GetValueAsString(NewState));
+	if (bDebugStateTransition)
+	{
+		UE_LOG(LogDerbyDemo, Log, TEXT("AI %s: %s -> %s"),
+			*GetName(),
+			*UEnum::GetValueAsString(CurrentState),
+			*UEnum::GetValueAsString(NewState));
+	}
 
 	if (NewState == EAIState::Reversing) ReverseTimeRemaining = ReverseTime;
 	if (NewState == EAIState::Ramming)   RamTimeElapsed        = 0.0f;
@@ -526,17 +556,19 @@ float ADerbyDemoAIController::ComputeWallAvoidanceSteering(float& OutWallDanger)
 
 ADerbyDemoPawn* ADerbyDemoAIController::FindNearestEnemy() const
 {
-	TArray<AActor*> AllPawns;
-	UGameplayStatics::GetAllActorsOfClass(GetWorld(), ADerbyDemoPawn::StaticClass(), AllPawns);
+	const ADerbyGameMode* GameMode = GetWorld()->GetAuthGameMode<ADerbyGameMode>();
+	if (!GameMode)
+	{
+		return nullptr;
+	}
 
 	ADerbyDemoPawn* Nearest = nullptr;
 	float NearestDistSq = TNumericLimits<float>::Max();
 	const FVector MyLocation = VehiclePawn->GetActorLocation();
 
-	for (AActor* Actor : AllPawns)
+	for (const TObjectPtr<ADerbyDemoPawn>& Other : GameMode->GetTrackedVehicles())
 	{
-		ADerbyDemoPawn* Other = Cast<ADerbyDemoPawn>(Actor);
-		if (!Other || Other == VehiclePawn)
+		if (!IsValid(Other) || Other == VehiclePawn || Other->bIsEliminated)
 		{
 			continue;
 		}
@@ -552,10 +584,31 @@ ADerbyDemoPawn* ADerbyDemoAIController::FindNearestEnemy() const
 	return Nearest;
 }
 
+void ADerbyDemoAIController::OnPawnEliminated(ADerbyDemoPawn* EliminatedPawn)
+{
+	// TakeDerbyDamage already set brake=0 + handbrake=true before broadcasting.
+	// Tick's Eliminated block takes over from here — just update the state.
+	TransitionToState(EAIState::Eliminated);
+}
+
+void ADerbyDemoAIController::OnRoundEnded(AActor* Winner)
+{
+	// Stop all surviving AI vehicles — round is over regardless of who won.
+	if (VehiclePawn && !VehiclePawn->bIsEliminated)
+	{
+		VehiclePawn->DoThrottle(0.f);
+		VehiclePawn->DoSteering(0.f);
+		VehiclePawn->GetChaosVehicleMovement()->SetBrakeInput(1.f);
+		VehiclePawn->GetChaosVehicleMovement()->SetHandbrakeInput(true);
+	}
+
+	TransitionToState(EAIState::Eliminated);
+}
+
 void ADerbyDemoAIController::BeginPlay()
 {
 	Super::BeginPlay();
-	
+
 	CachedStartingRoundRadius = FMath::Lerp(StartingRoundRadius.X, StartingRoundRadius.Y, FMath::FRandRange(0.f, 1.f));
-	
+
 }

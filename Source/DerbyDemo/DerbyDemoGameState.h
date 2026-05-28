@@ -8,12 +8,14 @@
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FStartRoundDelegate);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FCountdownTickDelegate, int32, SecondsRemaining);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FRoundEndDelegate, AActor*, Winner);
 
 UENUM(BlueprintType)
 enum class ERoundPhase : uint8
 {
 	PreRound   UMETA(DisplayName = "Pre Round"),
 	InProgress UMETA(DisplayName = "In Progress"),
+	PostRound  UMETA(DisplayName = "Post Round"),
 };
 
 /**
@@ -42,6 +44,17 @@ public:
 	UPROPERTY(BlueprintAssignable, Category = "Derby|Round")
 	FStartRoundDelegate StartRoundDelegate;
 
+	/** Broadcast when the round ends. Parameter is the winning vehicle (or null for a draw). */
+	UPROPERTY(BlueprintAssignable, Category = "Derby|Round")
+	FRoundEndDelegate RoundEndDelegate;
+
+	/** Number of non-eliminated vehicles still in the match. Updated by ADerbyGameMode. */
+	UPROPERTY(BlueprintReadOnly, Category = "Derby|Round")
+	int32 VehiclesRemaining = 0;
+
 	/** Called by ADerbyGameMode::StartRound() — sets phase to InProgress and broadcasts. */
 	void BeginRound();
+
+	/** Called by ADerbyGameMode::EndRound() — sets phase to PostRound and broadcasts RoundEndDelegate. */
+	void EndRound(AActor* Winner);
 };
